@@ -466,18 +466,50 @@ export default function GeneratorPage() {
         fontList.push('DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400;1,500;1,600');
       }
 
-      // 3. Busca o CSS destas fontes diretamente do Google Fonts em tempo de exportação
-      // Isso nos dá as regras @font-face que o html-to-image converterá em base64 com CORS liberado.
-      let fontCSS = '';
+      // 3. Busca o CSS destas fontes diretamente do Google Fonts e converte os arquivos woff2 para base64.
+      // Isso torna o SVG 100% autossuficiente e imune a bloqueios de CORS e políticas do navegador no canvas.
+      let base64FontCSS = '';
       if (fontList.length > 0) {
         const fontCSSUrl = `https://fonts.googleapis.com/css2?family=${fontList.join('&family=')}&display=swap`;
         try {
           const fontRes = await fetch(fontCSSUrl);
           if (fontRes.ok) {
-            fontCSS = await fontRes.text();
+            let cssText = await fontRes.text();
+            
+            // Regex robusta para encontrar as URLs binárias (.woff2)
+            const urlRegex = /url\(['"]?(https:\/\/fonts\.gstatic\.com\/[^'"\)]+)['"]?\)/g;
+            const matches = [...cssText.matchAll(urlRegex)];
+            const fontUrlToBase64 = new Map<string, string>();
+
+            // Busca e converte cada arquivo woff2 para base64 em paralelo
+            await Promise.all(matches.map(async (match) => {
+              const fontFileUrl = match[1];
+              if (fontUrlToBase64.has(fontFileUrl)) return;
+              try {
+                const fontFileRes = await fetch(fontFileUrl);
+                if (fontFileRes.ok) {
+                  const blob = await fontFileRes.blob();
+                  const base64Data = await new Promise<string>((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result as string);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(blob);
+                  });
+                  fontUrlToBase64.set(fontFileUrl, base64Data);
+                }
+              } catch (err) {
+                console.error(`Erro ao inlinar arquivo de fonte ${fontFileUrl}:`, err);
+              }
+            }));
+
+            // Substitui todas as URLs pelos dados base64 correspondentes no CSS
+            for (const [fontFileUrl, base64Data] of fontUrlToBase64.entries()) {
+              cssText = cssText.replaceAll(fontFileUrl, base64Data);
+            }
+            base64FontCSS = cssText;
           }
         } catch (fontFetchError) {
-          console.error("Erro ao obter CSS das fontes do Google para injeção:", fontFetchError);
+          console.error("Erro ao obter e processar fontes em base64:", fontFetchError);
         }
       }
 
@@ -487,7 +519,7 @@ export default function GeneratorPage() {
       for (let i = 0; i < slideElements.length; i++) {
         const el = slideElements[i] as HTMLElement;
         el.scrollIntoView({ behavior: 'instant', block: 'nearest', inline: 'center' });
-        await new Promise(r => setTimeout(r, 400)); // Pequena pausa para garantir renderização perfeita no DOM
+        await new Promise(r => setTimeout(r, 450)); // Pequena pausa para garantir renderização perfeita no DOM
 
         try {
           const bgColor = window.getComputedStyle(el).backgroundColor;
@@ -496,8 +528,8 @@ export default function GeneratorPage() {
             width: 420,
             height: 525,
             cacheBust: true,
-            skipFonts: false,
-            fontEmbedCSS: fontCSS || undefined, // Injeta o CSS das fontes necessárias diretamente no clone do html-to-image
+            skipFonts: true, // Ignora varredura padrão para evitar falhas de CORS, pois as fontes que importam já estão no fontEmbedCSS
+            fontEmbedCSS: base64FontCSS || undefined, // Injeta o CSS com as fontes embutidas em base64 diretamente no SVG
             backgroundColor: bgColor !== 'rgba(0, 0, 0, 0)' ? bgColor : '#000000'
           });
 
