@@ -72,6 +72,7 @@ export function loadAllGoogleFonts() {
   const link = document.createElement('link');
   link.id = linkId;
   link.rel = 'stylesheet';
+  link.crossOrigin = 'anonymous';
   link.href = `https://fonts.googleapis.com/css2?family=${families}&display=swap`;
   document.head.appendChild(link);
 }

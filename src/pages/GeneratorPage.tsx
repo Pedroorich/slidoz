@@ -425,13 +425,69 @@ export default function GeneratorPage() {
     if (!slides.length || !previewRef.current) return;
     setIsExporting(true);
     try {
+      // 1. Espera as fontes do navegador estarem 100% carregadas e prontas
+      try {
+        await document.fonts.ready;
+      } catch (fontReadyError) {
+        console.warn("Aviso ao aguardar document.fonts.ready:", fontReadyError);
+      }
+
+      // 2. Coleta apenas as fontes que estão sendo realmente utilizadas no carrossel atual
+      const selectedFonts = FONT_PAIRINGS[fontPairingIndex];
+      const usedFonts = new Set<string>();
+      if (selectedFonts.heading) usedFonts.add(selectedFonts.heading);
+      if (selectedFonts.body) usedFonts.add(selectedFonts.body);
+
+      slides.forEach(slide => {
+        if (slide.titleFont) usedFonts.add(slide.titleFont);
+        if (slide.bodyFont) usedFonts.add(slide.bodyFont);
+        if (slide.customLayers) {
+          slide.customLayers.forEach(layer => {
+            if (layer.fontFamily) usedFonts.add(layer.fontFamily);
+          });
+        }
+      });
+
+      // Formata a lista de fontes para o Google Fonts
+      const fontList = Array.from(usedFonts)
+        .filter(f => f !== 'Monument Extended' && f !== 'Times New Roman')
+        .map(f => {
+          if (['Anton', 'Bebas Neue', 'Instrument Serif', 'Bagel Fat One'].includes(f)) {
+            return `${f.replace(/ /g, '+')}:wght@400`;
+          }
+          return `${f.replace(/ /g, '+')}:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,300;1,400;1,500;1,600;1,700;1,800`;
+        });
+
+      // Adiciona Syne e DM Sans que são as fontes padrão do app por garantia
+      if (!usedFonts.has('Syne')) {
+        fontList.push('Syne:wght@400;600;700;800');
+      }
+      if (!usedFonts.has('DM Sans')) {
+        fontList.push('DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400;1,500;1,600');
+      }
+
+      // 3. Busca o CSS destas fontes diretamente do Google Fonts em tempo de exportação
+      // Isso nos dá as regras @font-face que o html-to-image converterá em base64 com CORS liberado.
+      let fontCSS = '';
+      if (fontList.length > 0) {
+        const fontCSSUrl = `https://fonts.googleapis.com/css2?family=${fontList.join('&family=')}&display=swap`;
+        try {
+          const fontRes = await fetch(fontCSSUrl);
+          if (fontRes.ok) {
+            fontCSS = await fontRes.text();
+          }
+        } catch (fontFetchError) {
+          console.error("Erro ao obter CSS das fontes do Google para injeção:", fontFetchError);
+        }
+      }
+
       const slideElements = document.querySelectorAll('.slide-container');
       const newExportedImages: string[] = [];
 
       for (let i = 0; i < slideElements.length; i++) {
         const el = slideElements[i] as HTMLElement;
         el.scrollIntoView({ behavior: 'instant', block: 'nearest', inline: 'center' });
-        await new Promise(r => setTimeout(r, 300)); // Give it time to render
+        await new Promise(r => setTimeout(r, 400)); // Pequena pausa para garantir renderização perfeita no DOM
 
         try {
           const bgColor = window.getComputedStyle(el).backgroundColor;
@@ -441,6 +497,7 @@ export default function GeneratorPage() {
             height: 525,
             cacheBust: true,
             skipFonts: false,
+            fontEmbedCSS: fontCSS || undefined, // Injeta o CSS das fontes necessárias diretamente no clone do html-to-image
             backgroundColor: bgColor !== 'rgba(0, 0, 0, 0)' ? bgColor : '#000000'
           });
 
