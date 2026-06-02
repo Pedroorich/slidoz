@@ -687,7 +687,7 @@ export default function SalesPage() {
             </h1>
             
             <p className="text-base md:text-lg text-cream/70 leading-relaxed mb-8 max-w-2xl mx-auto">
-              Transforme ideias simples em carrosséis ultra-profissionais com roteiros magnéticos estruturados de copy, paletas otimizadas e imagens IA de alta fidelidade. **Economize R$ 1.500/mês em designers lerdos com a velocidade do automático.**
+              Transforme ideias simples em carrosséis ultra-profissionais com roteiros magnéticos estruturados de copy, paletas otimizadas e imagens IA de alta fidelidade. <strong className="font-bold text-cream">Economize R$ 1.500/mês em designers lerdos com a velocidade do automático.</strong>
             </p>
             
             <div className="hero-cta-wrap flex gap-4 flex-wrap justify-center">
@@ -737,7 +737,7 @@ export default function SalesPage() {
                       alt={`Empreendedorismo Slide ${i + 1}`} 
                       loading={i < 2 ? "eager" : "lazy"}
                       decoding="async"
-                      className="h-64 sm:h-80 md:h-[400px] aspect-square object-cover rounded-2xl slide-card bg-[#161224]/50" 
+                      className="h-80 sm:h-96 md:h-[450px] aspect-[4/5] object-cover rounded-2xl slide-card bg-[#161224]/50" 
                     />
                   ))}
                 </div>
@@ -750,7 +750,7 @@ export default function SalesPage() {
                       alt={`Empreendedorismo Slide ${i + 1} clone`} 
                       loading="lazy"
                       decoding="async"
-                      className="h-64 sm:h-80 md:h-[400px] aspect-square object-cover rounded-2xl slide-card bg-[#161224]/50" 
+                      className="h-80 sm:h-96 md:h-[450px] aspect-[4/5] object-cover rounded-2xl slide-card bg-[#161224]/50" 
                     />
                   ))}
                 </div>
@@ -776,7 +776,7 @@ export default function SalesPage() {
                       alt={`Marketing Digital Slide ${i + 1}`} 
                       loading={i < 2 ? "eager" : "lazy"}
                       decoding="async"
-                      className="h-64 sm:h-80 md:h-[400px] aspect-square object-cover rounded-2xl slide-card bg-[#161224]/50" 
+                      className="h-80 sm:h-96 md:h-[450px] aspect-[4/5] object-cover rounded-2xl slide-card bg-[#161224]/50" 
                     />
                   ))}
                 </div>
@@ -789,7 +789,7 @@ export default function SalesPage() {
                       alt={`Marketing Digital Slide ${i + 1} clone`} 
                       loading="lazy"
                       decoding="async"
-                      className="h-64 sm:h-80 md:h-[400px] aspect-square object-cover rounded-2xl slide-card bg-[#161224]/50" 
+                      className="h-80 sm:h-96 md:h-[450px] aspect-[4/5] object-cover rounded-2xl slide-card bg-[#161224]/50" 
                     />
                   ))}
                 </div>
@@ -815,7 +815,7 @@ export default function SalesPage() {
                       alt={`Social Business Slide ${i + 1}`} 
                       loading={i < 2 ? "eager" : "lazy"}
                       decoding="async"
-                      className="h-64 sm:h-80 md:h-[400px] aspect-square object-cover rounded-2xl slide-card bg-[#161224]/50" 
+                      className="h-80 sm:h-96 md:h-[450px] aspect-[4/5] object-cover rounded-2xl slide-card bg-[#161224]/50" 
                     />
                   ))}
                 </div>
@@ -828,7 +828,7 @@ export default function SalesPage() {
                       alt={`Social Business Slide ${i + 1} clone`} 
                       loading="lazy"
                       decoding="async"
-                      className="h-64 sm:h-80 md:h-[400px] aspect-square object-cover rounded-2xl slide-card bg-[#161224]/50" 
+                      className="h-80 sm:h-96 md:h-[450px] aspect-[4/5] object-cover rounded-2xl slide-card bg-[#161224]/50" 
                     />
                   ))}
                 </div>
