@@ -4,6 +4,8 @@ import { db, createNewUserAuth } from '../lib/firebase';
 import { 
   collection, 
   getDocs, 
+  getDoc,
+  where,
   doc, 
   updateDoc, 
   deleteDoc, 
@@ -74,7 +76,21 @@ export default function Admin() {
 
   // Estado de ações em andamento
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'users' | 'add' | 'logs'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'add' | 'logs' | 'affiliates' | 'payouts'>('users');
+
+  // Estados para Afiliados e Saques
+  const [affiliates, setAffiliates] = useState<UserProfile[]>([]);
+  const [payoutRequests, setPayoutRequests] = useState<any[]>([]);
+  const [loadingAffiliates, setLoadingAffiliates] = useState(false);
+  const [loadingPayouts, setLoadingPayouts] = useState(false);
+
+  // Estados para formulário de ativação de afiliado
+  const [targetUserIdForAffiliate, setTargetUserIdForAffiliate] = useState('');
+  const [newAffiliateCode, setNewAffiliateCode] = useState('');
+  const [newAffiliateRate, setNewAffiliateRate] = useState(50); // 50% por padrão
+  const [affiliateActionSuccess, setAffiliateActionSuccess] = useState<string | null>(null);
+  const [affiliateActionError, setAffiliateActionError] = useState<string | null>(null);
+  const [affiliateActionLoading, setAffiliateActionLoading] = useState(false);
 
   // Valores padrão de preços para estimar faturamento
   const MONTHLY_PRICE = 49.90; // R$ 49,90 por mês
@@ -108,10 +124,165 @@ export default function Admin() {
         logsList.push({ id: doc.id, ...doc.data() } as ActivityLog);
       });
       setLogs(logsList);
+
+      // 3. Busca Afiliados e Solicitações de Saque
+      await loadAffiliatesAndPayouts(usersList);
     } catch (error) {
       console.error('Erro ao carregar dados do administrador:', error);
     } finally {
       setLoadingData(false);
+    }
+  };
+
+  const loadAffiliatesAndPayouts = async (allUsersList?: UserProfile[]) => {
+    try {
+      // Carrega Afiliados (usuários com isAffiliate == true)
+      const currentUsers = allUsersList || users;
+      const affiliatesList = currentUsers.filter(u => u.isAffiliate === true);
+      setAffiliates(affiliatesList);
+
+      // Carrega solicitações de saque (payout_requests)
+      const payoutSnap = await getDocs(collection(db, 'payout_requests'));
+      const payoutList: any[] = [];
+      payoutSnap.forEach((doc) => {
+        payoutList.push({ id: doc.id, ...doc.data() });
+      });
+      // Ordena por data de criação decrescente
+      setPayoutRequests(payoutList.sort((a, b) => {
+        const dateA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : (a.createdAt ? new Date(a.createdAt).getTime() : 0);
+        const dateB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
+        return dateB - dateA;
+      }));
+    } catch (e) {
+      console.error("Erro ao buscar afiliados ou saques:", e);
+    }
+  };
+
+  const handleMakeAffiliate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!targetUserIdForAffiliate || !newAffiliateCode) {
+      setAffiliateActionError('Selecione um usuário e insira um código único.');
+      return;
+    }
+    
+    setAffiliateActionLoading(true);
+    setAffiliateActionError(null);
+    setAffiliateActionSuccess(null);
+
+    try {
+      const trimmedCode = newAffiliateCode.trim().toLowerCase();
+      // Verifica se o código já está em uso
+      const codeQuery = query(
+        collection(db, 'users'),
+        where('affiliateCode', '==', trimmedCode),
+        limit(1)
+      );
+      const codeSnap = await getDocs(codeQuery);
+      if (!codeSnap.empty) {
+        setAffiliateActionError('Este código de afiliado já está em uso por outro parceiro.');
+        setAffiliateActionLoading(false);
+        return;
+      }
+
+      const userRef = doc(db, 'users', targetUserIdForAffiliate);
+      await updateDoc(userRef, {
+        isAffiliate: true,
+        affiliateCode: trimmedCode,
+        commissionRate: newAffiliateRate / 100,
+        balancePending: 0,
+        balanceAvailable: 0
+      });
+
+      setAffiliateActionSuccess('Usuário promovido a Afiliado com sucesso!');
+      setTargetUserIdForAffiliate('');
+      setNewAffiliateCode('');
+      
+      await loadAllData();
+    } catch (err: any) {
+      console.error(err);
+      setAffiliateActionError(err.message || 'Erro ao promover afiliado.');
+    } finally {
+      setAffiliateActionLoading(false);
+    }
+  };
+
+  const handleUpdateCommissionRate = async (uid: string, currentRate: number) => {
+    const newRateStr = prompt("Digite a nova taxa de comissão em % (ex: 50 para 50%):", (currentRate * 100).toString());
+    if (newRateStr === null) return;
+    const rateVal = parseFloat(newRateStr);
+    if (isNaN(rateVal) || rateVal < 0 || rateVal > 100) {
+      alert("Taxa inválida. Digite um número entre 0 e 100.");
+      return;
+    }
+
+    try {
+      await updateDoc(doc(db, 'users', uid), {
+        commissionRate: rateVal / 100
+      });
+      await loadAllData();
+    } catch (e) {
+      console.error("Erro ao atualizar taxa de comissão:", e);
+    }
+  };
+
+  const handleDisableAffiliate = async (uid: string) => {
+    if (!window.confirm("Deseja realmente desativar este afiliado? Ele perderá o código de rastreamento.")) {
+      return;
+    }
+    try {
+      await updateDoc(doc(db, 'users', uid), {
+        isAffiliate: false,
+        affiliateCode: ""
+      });
+      await loadAllData();
+    } catch (e) {
+      console.error("Erro ao desativar afiliado:", e);
+    }
+  };
+
+  const handleApprovePayout = async (payoutId: string, affiliateId: string, amount: number) => {
+    if (!window.confirm(`Tem certeza de que deseja marcar este saque de R$ ${amount.toFixed(2)} como PAGO?\nCertifique-se de fazer a transferência PIX no app do seu banco antes de aprovar!`)) {
+      return;
+    }
+
+    try {
+      // 1. Atualiza status do saque
+      await updateDoc(doc(db, 'payout_requests', payoutId), {
+        status: 'approved',
+        processedAt: serverTimestamp()
+      });
+
+      // 2. Deduz do saldo disponível do afiliado
+      const affRef = doc(db, 'users', affiliateId);
+      const affDoc = await getDoc(affRef);
+      if (affDoc.exists()) {
+        const affData = affDoc.data();
+        const currentBalanceAvailable = affData.balanceAvailable || 0;
+        await updateDoc(affRef, {
+          balanceAvailable: Number((Math.max(0, currentBalanceAvailable - amount)).toFixed(2))
+        });
+      }
+
+      alert("Saque aprovado e saldo atualizado com sucesso!");
+      await loadAllData();
+    } catch (e) {
+      console.error("Erro ao aprovar saque:", e);
+      alert("Erro ao aprovar saque.");
+    }
+  };
+
+  const handleRejectPayout = async (payoutId: string) => {
+    if (!window.confirm("Deseja rejeitar esta solicitação de saque?")) {
+      return;
+    }
+    try {
+      await updateDoc(doc(db, 'payout_requests', payoutId), {
+        status: 'rejected',
+        processedAt: serverTimestamp()
+      });
+      await loadAllData();
+    } catch (e) {
+      console.error("Erro ao rejeitar saque:", e);
     }
   };
 
@@ -143,6 +314,27 @@ export default function Admin() {
         expiresAt.setDate(expiresAt.getDate() + 365);
       }
 
+      // 2.1 Busca se há indicação de afiliado pendente para este e-mail
+      let referredByCode = '';
+      let leadDocId = null;
+      try {
+        const pendingLeadsRef = collection(db, 'pending_leads');
+        const leadQuery = query(
+          pendingLeadsRef, 
+          where('email', '==', newUserEmail.trim().toLowerCase()),
+          where('status', '==', 'pending'),
+          limit(1)
+        );
+        const leadSnap = await getDocs(leadQuery);
+        if (!leadSnap.empty) {
+          const leadDoc = leadSnap.docs[0];
+          referredByCode = leadDoc.data().referredBy || '';
+          leadDocId = leadDoc.id;
+        }
+      } catch (err) {
+        console.error('Erro ao buscar lead pendente:', err);
+      }
+
       // 3. Salva os dados cadastrais no Firestore
       const userDocRef = doc(db, 'users', newUid);
       const newUserProfile: UserProfile = {
@@ -158,11 +350,70 @@ export default function Admin() {
         suspended: false
       };
 
+      if (referredByCode) {
+        newUserProfile.referredBy = referredByCode;
+      }
+
       await setDoc(userDocRef, {
         ...newUserProfile,
         createdAt: serverTimestamp(),
         expiresAt: expiresAt
       });
+
+      // 3.1 Se houver afiliado indicador, registra a comissão correspondente
+      if (referredByCode) {
+        try {
+          const affiliatesQuery = query(
+            collection(db, 'users'),
+            where('affiliateCode', '==', referredByCode),
+            where('isAffiliate', '==', true),
+            limit(1)
+          );
+          const affSnap = await getDocs(affiliatesQuery);
+          if (!affSnap.empty) {
+            const affDoc = affSnap.docs[0];
+            const affiliateUid = affDoc.id;
+            const affData = affDoc.data();
+            const commissionRate = affData.commissionRate !== undefined ? affData.commissionRate : 0.50; // 50% padrão
+            
+            const saleAmount = newUserPlan === 'monthly' ? MONTHLY_PRICE : ANNUAL_PRICE;
+            const commissionAmount = Number((saleAmount * commissionRate).toFixed(2));
+            
+            // Cria registro na coleção 'commissions'
+            const commissionDocRef = doc(collection(db, 'commissions'));
+            const releaseDate = new Date();
+            releaseDate.setDate(releaseDate.getDate() + 7); // Garantia de 7 dias
+            
+            await setDoc(commissionDocRef, {
+              commissionId: commissionDocRef.id,
+              affiliateId: affiliateUid,
+              buyerEmail: newUserEmail.trim().toLowerCase(),
+              buyerName: newUserName.trim(),
+              saleAmount: saleAmount,
+              commissionAmount: commissionAmount,
+              status: 'pending',
+              createdAt: serverTimestamp(),
+              releaseDate: releaseDate
+            });
+
+            // Atualiza saldo pendente do afiliado no documento do usuário
+            const currentBalancePending = affData.balancePending || 0;
+            await updateDoc(doc(db, 'users', affiliateUid), {
+              balancePending: Number((currentBalancePending + commissionAmount).toFixed(2))
+            });
+
+            // Marca o lead pendente como aprovado para evitar duplicidade
+            if (leadDocId) {
+              await updateDoc(doc(db, 'pending_leads', leadDocId), {
+                status: 'approved'
+              });
+            }
+            console.log(`Comissão de R$ ${commissionAmount} atribuída com sucesso ao afiliado UID: ${affiliateUid}`);
+          }
+        } catch (err) {
+          console.error('Erro ao processar comissão de afiliado:', err);
+        }
+      }
 
       // 4. Grava no log de auditoria
       const logDocRef = doc(collection(db, 'activity_logs'));
@@ -537,6 +788,30 @@ export default function Admin() {
           >
             <Activity className="w-4 h-4" />
             Histórico Global de Ações
+          </button>
+
+          <button
+            onClick={() => setActiveTab('affiliates')}
+            className={`px-5 py-3 font-semibold text-sm border-b-2 transition-colors cursor-pointer flex items-center gap-2 ${
+              activeTab === 'affiliates' 
+                ? 'border-[#6C63FF] text-[#6C63FF]' 
+                : 'border-transparent text-[rgba(255,255,255,0.5)] hover:text-white'
+            }`}
+          >
+            <Users className="w-4 h-4 text-[#FF6584]" />
+            Gestão de Afiliados ({affiliates.length})
+          </button>
+
+          <button
+            onClick={() => setActiveTab('payouts')}
+            className={`px-5 py-3 font-semibold text-sm border-b-2 transition-colors cursor-pointer flex items-center gap-2 ${
+              activeTab === 'payouts' 
+                ? 'border-[#6C63FF] text-[#6C63FF]' 
+                : 'border-transparent text-[rgba(255,255,255,0.5)] hover:text-white'
+            }`}
+          >
+            <DollarSign className="w-4 h-4 text-green-400" />
+            Solicitações de Saque ({payoutRequests.filter(p => p.status === 'pending').length})
           </button>
         </div>
 
@@ -979,6 +1254,275 @@ export default function Admin() {
                 </div>
               )}
 
+            </div>
+          </section>
+        )}
+
+        {/* TAB 4: GESTÃO DE AFILIADOS */}
+        {activeTab === 'affiliates' && (
+          <section className="space-y-8 animate-fadeIn">
+            {/* FORM TO PROMOTE USER TO AFFILIATE */}
+            <div className="max-w-xl mx-auto bg-[#121212] border border-[rgba(255,255,255,0.05)] rounded-3xl p-6 md:p-8">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-10 h-10 bg-[rgba(255,101,132,0.1)] rounded-xl flex items-center justify-center text-[#FF6584]">
+                  <Users className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-['Syne'] font-bold text-lg text-white">Promover Usuário a Afiliado</h3>
+                  <p className="text-xs text-[rgba(255,255,255,0.5)]">Dê permissão para o usuário indicar e lucrar</p>
+                </div>
+              </div>
+
+              {affiliateActionError && (
+                <div className="mb-5 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-start gap-2 animate-[shake_0.4s_ease-in-out]">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <span>{affiliateActionError}</span>
+                </div>
+              )}
+
+              {affiliateActionSuccess && (
+                <div className="mb-5 p-4 rounded-xl bg-green-500/10 border border-green-500/20 text-green-400 text-xs flex items-start gap-2">
+                  <CheckCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <span>{affiliateActionSuccess}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleMakeAffiliate} className="space-y-4">
+                {/* SELECT USER */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-[rgba(255,255,255,0.5)] uppercase tracking-wider">Selecionar Usuário *</label>
+                  <select
+                    value={targetUserIdForAffiliate}
+                    onChange={(e) => setTargetUserIdForAffiliate(e.target.value)}
+                    disabled={affiliateActionLoading}
+                    className="w-full bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] rounded-xl py-3 px-4 text-xs outline-none text-white cursor-pointer"
+                    required
+                  >
+                    <option value="" className="bg-[#121212]">Selecione um usuário...</option>
+                    {users.filter(u => u.role !== 'admin' && !u.isAffiliate).map(u => (
+                      <option key={u.uid} value={u.uid} className="bg-[#121212]">{u.name} ({u.email})</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* REFERRAL CODE */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-[rgba(255,255,255,0.5)] uppercase tracking-wider">Código Exclusivo *</label>
+                    <input
+                      type="text"
+                      placeholder="Ex: pedro50"
+                      value={newAffiliateCode}
+                      onChange={(e) => setNewAffiliateCode(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ''))}
+                      disabled={affiliateActionLoading}
+                      className="w-full bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] focus:border-[#FF6584] rounded-xl py-3 px-4 text-xs outline-none text-white transition-all font-semibold"
+                      required
+                    />
+                  </div>
+
+                  {/* COMMISSION RATE */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-[rgba(255,255,255,0.5)] uppercase tracking-wider">Comissão (%) *</label>
+                    <input
+                      type="number"
+                      placeholder="Ex: 50"
+                      value={newAffiliateRate}
+                      onChange={(e) => setNewAffiliateRate(Number(e.target.value))}
+                      disabled={affiliateActionLoading}
+                      min="1"
+                      max="100"
+                      className="w-full bg-[rgba(255,255,255,0.02)] border border-[rgba(255,255,255,0.06)] focus:border-[#FF6584] rounded-xl py-3 px-4 text-xs outline-none text-white transition-all font-semibold"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={affiliateActionLoading}
+                  className="w-full py-3.5 bg-gradient-to-r from-[#FF6584] to-[#6C63FF] hover:opacity-95 text-white font-semibold text-xs rounded-xl flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer disabled:opacity-50 mt-2"
+                >
+                  {affiliateActionLoading ? (
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  ) : (
+                    <>
+                      <UserPlus className="w-4 h-4" />
+                      Ativar Parceiro Afiliado
+                    </>
+                  )}
+                </button>
+              </form>
+            </div>
+
+            {/* LIST OF ACTIVE AFFILIATES */}
+            <div className="bg-[#121212] border border-[rgba(255,255,255,0.05)] rounded-2xl overflow-hidden">
+              <div className="p-5 border-b border-[rgba(255,255,255,0.06)]">
+                <h3 className="font-['Syne'] font-bold text-white text-base">Afiliados Ativos</h3>
+                <p className="text-xs text-[rgba(255,255,255,0.45)] mt-0.5">Parceiros com permissão de rastreamento de vendas no SlidOz</p>
+              </div>
+
+              {affiliates.length === 0 ? (
+                <div className="py-16 text-center text-[rgba(255,255,255,0.4)] text-xs">
+                  Nenhum parceiro promovido a afiliado ainda.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-[rgba(255,255,255,0.06)] text-[10px] uppercase font-bold text-[rgba(255,255,255,0.4)] tracking-wider">
+                        <th className="py-4 px-6">Parceiro / E-mail</th>
+                        <th className="py-4 px-4">Código (Link)</th>
+                        <th className="py-4 px-4">Taxa Comissão</th>
+                        <th className="py-4 px-4">Saldo Pendente</th>
+                        <th className="py-4 px-4">Saldo Disponível</th>
+                        <th className="py-4 px-6 text-right">Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[rgba(255,255,255,0.03)] text-xs">
+                      {affiliates.map((aff) => {
+                        return (
+                          <tr key={aff.uid} className="hover:bg-[rgba(255,255,255,0.01)] transition-colors">
+                            <td className="py-4 px-6">
+                              <div className="font-semibold text-white">{aff.name}</div>
+                              <div className="text-[10px] text-[rgba(255,255,255,0.4)] font-medium mt-0.5">{aff.email}</div>
+                            </td>
+                            <td className="py-4 px-4 font-mono font-bold text-[#FF6584]">
+                              {aff.affiliateCode}
+                            </td>
+                            <td className="py-4 px-4 font-medium text-white">
+                              {Number((aff.commissionRate || 0.5) * 100)}%
+                            </td>
+                            <td className="py-4 px-4 text-yellow-500 font-semibold font-mono">
+                              R$ {(aff.balancePending || 0).toFixed(2)}
+                            </td>
+                            <td className="py-4 px-4 text-green-400 font-semibold font-mono">
+                              R$ {(aff.balanceAvailable || 0).toFixed(2)}
+                            </td>
+                            <td className="py-4 px-6 text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                <button
+                                  onClick={() => handleUpdateCommissionRate(aff.uid, aff.commissionRate || 0.5)}
+                                  className="px-2 py-1.5 bg-[#6C63FF]/15 hover:bg-[#6C63FF]/30 border border-[#6C63FF]/20 text-[#8C85FF] rounded font-semibold text-[10px] tracking-wide transition-all cursor-pointer"
+                                  title="Alterar Taxa de Comissão"
+                                >
+                                  AJUSTAR COMISSÃO
+                                </button>
+                                <button
+                                  onClick={() => handleDisableAffiliate(aff.uid)}
+                                  className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded transition-colors cursor-pointer"
+                                  title="Remover Permissão de Afiliado"
+                                >
+                                  <Ban className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* TAB 5: SOLICITAÇÕES DE SAQUE */}
+        {activeTab === 'payouts' && (
+          <section className="space-y-4 animate-fadeIn">
+            <div className="bg-[#121212] border border-[rgba(255,255,255,0.05)] rounded-2xl overflow-hidden">
+              <div className="p-5 border-b border-[rgba(255,255,255,0.06)]">
+                <h3 className="font-['Syne'] font-bold text-white text-base">Solicitações de Transferência PIX</h3>
+                <p className="text-xs text-[rgba(255,255,255,0.45)] mt-0.5">Aprove e dê baixa nos pagamentos de comissão liberados</p>
+              </div>
+
+              {payoutRequests.length === 0 ? (
+                <div className="py-16 text-center text-[rgba(255,255,255,0.4)] text-xs">
+                  Nenhuma solicitação de saque cadastrada no sistema.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-[rgba(255,255,255,0.06)] text-[10px] uppercase font-bold text-[rgba(255,255,255,0.4)] tracking-wider">
+                        <th className="py-4 px-6">Afiliado</th>
+                        <th className="py-4 px-4">Chave PIX</th>
+                        <th className="py-4 px-4">Valor Solicitado</th>
+                        <th className="py-4 px-4">Data Solicitação</th>
+                        <th className="py-4 px-4">Status</th>
+                        <th className="py-4 px-6 text-right">Ações de Pagamento</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[rgba(255,255,255,0.03)] text-xs">
+                      {payoutRequests.map((req) => {
+                        const affDetails = users.find(u => u.uid === req.affiliateId);
+                        const relativeTime = getRelativeTimeString(req.createdAt);
+
+                        return (
+                          <tr key={req.id} className="hover:bg-[rgba(255,255,255,0.01)] transition-colors">
+                            <td className="py-4 px-6">
+                              <div className="font-semibold text-white">{affDetails?.name || 'Parceiro Desconhecido'}</div>
+                              <div className="text-[10px] text-[rgba(255,255,255,0.4)] font-medium mt-0.5">{affDetails?.email || ''}</div>
+                            </td>
+                            <td className="py-4 px-4">
+                              <div className="font-mono font-bold text-white max-w-[200px] truncate" title={req.pixKey}>
+                                {req.pixKey}
+                              </div>
+                            </td>
+                            <td className="py-4 px-4 text-green-400 font-bold font-mono text-sm">
+                              R$ {Number(req.amount).toFixed(2)}
+                            </td>
+                            <td className="py-4 px-4 text-[rgba(255,255,255,0.6)]">
+                              {relativeTime}
+                            </td>
+                            <td className="py-4 px-4">
+                              {req.status === 'pending' && (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-yellow-500/10 text-yellow-500 border border-yellow-500/20">
+                                  AGUARDANDO
+                                </span>
+                              )}
+                              {req.status === 'approved' && (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-green-500/10 text-green-400 border border-green-500/20">
+                                  PAGO
+                                </span>
+                              )}
+                              {req.status === 'rejected' && (
+                                <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-red-500/10 text-red-400 border border-red-500/20">
+                                  REJEITADO
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-4 px-6 text-right">
+                              {req.status === 'pending' ? (
+                                <div className="flex items-center justify-end gap-2">
+                                  <button
+                                    onClick={() => handleApprovePayout(req.id, req.affiliateId, req.amount)}
+                                    className="px-2.5 py-1.5 bg-green-500/15 hover:bg-green-500/35 border border-green-500/20 text-green-400 rounded font-semibold text-[10px] tracking-wide transition-all cursor-pointer"
+                                    title="Marcar como pago via PIX"
+                                  >
+                                    APROVAR PIX
+                                  </button>
+                                  <button
+                                    onClick={() => handleRejectPayout(req.id)}
+                                    className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded transition-colors cursor-pointer"
+                                    title="Rejeitar Solicitação"
+                                  >
+                                    <Ban className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-[rgba(255,255,255,0.35)] font-semibold text-[10px]">
+                                  CONCLUÍDO
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </section>
         )}

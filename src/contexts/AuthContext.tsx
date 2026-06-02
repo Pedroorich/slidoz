@@ -14,6 +14,12 @@ export interface UserProfile {
   expiresAt: any;
   whatsappNumber?: string;
   suspended?: boolean;
+  referredBy?: string;
+  isAffiliate?: boolean;
+  affiliateCode?: string;
+  pixKey?: string;
+  pixKeyType?: string;
+  commissionRate?: number;
 }
 
 interface AuthContextType {
@@ -42,6 +48,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (userDoc.exists()) {
         const data = userDoc.data() as UserProfile;
+        // Auto-correção: Se for o email do admin principal mas o cargo no banco não for admin, corrige automaticamente
+        if (currentUser.email?.toLowerCase() === adminEmail && data.role !== 'admin') {
+          await setDoc(userDocRef, { role: 'admin', subscriptionActive: true }, { merge: true });
+          data.role = 'admin';
+          data.subscriptionActive = true;
+        }
         setProfile(data);
       } else {
         // Se o usuário logado for o admin principal, cria o documento dele no Firestore automaticamente

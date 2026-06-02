@@ -51,6 +51,32 @@ service cloud.firestore {
       // Ninguém pode alterar ou apagar logs (auditoria imutável), exceto admin se necessário
       allow update, delete: if isAdmin();
     }
+
+    // Regras para a coleção de leads pendentes (checkout de novos clientes)
+    match /pending_leads/{leadId} {
+      // Qualquer visitante (mesmo não logado) pode registrar seu interesse/lead para pagamento
+      allow create: if true;
+      // Apenas o administrador pode ler, atualizar ou deletar os leads
+      allow read, update, delete: if isAdmin();
+    }
+
+    // Regras para a coleção de comissões de afiliados
+    match /commissions/{commissionId} {
+      // Qualquer usuário logado pode ler se for o afiliado dono da comissão, e admin lê tudo
+      allow read: if request.auth != null && (request.auth.uid == resource.data.affiliateId || isAdmin());
+      // Apenas o administrador pode criar ou modificar comissões
+      allow write: if isAdmin();
+    }
+
+    // Regras para solicitações de saque (payout_requests)
+    match /payout_requests/{requestId} {
+      // Qualquer usuário logado pode ler suas próprias solicitações, e o admin lê todas
+      allow read: if request.auth != null && (request.auth.uid == resource.data.affiliateId || isAdmin());
+      // Afiliados logados podem criar solicitações
+      allow create: if request.auth != null && request.resource.data.affiliateId == request.auth.uid;
+      // Apenas o administrador pode aprovar/rejeitar solicitações de saques
+      allow update, delete: if isAdmin();
+    }
   }
 }
 ```

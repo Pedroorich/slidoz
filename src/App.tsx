@@ -1,15 +1,19 @@
 import React from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Dashboard from './pages/Dashboard';
 import GeneratorPage from './pages/GeneratorPage';
 import Login from './pages/Login';
 import Admin from './pages/Admin';
 import Expired from './pages/Expired';
+import SalesPage from './pages/SalesPage';
+import CheckoutPage from './pages/CheckoutPage';
+import AffiliateDashboard from './pages/AffiliateDashboard';
 
 // Rota protegida: Exige login e assinatura ativa (ou cargo admin)
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading, isSubscriptionActive, isAdmin } = useAuth();
+  const location = useLocation();
   
   if (loading) {
     return (
@@ -20,7 +24,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
   
   if (!user) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
   // Admin sempre tem acesso completo
@@ -38,6 +42,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 // Rota de Administrador: Exige login e cargo admin
 function AdminRoute({ children }: { children: React.ReactNode }) {
   const { user, loading, isAdmin } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -48,7 +53,7 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (!user || !isAdmin) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
   return <>{children}</>;
@@ -57,6 +62,7 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
 // Rota autenticada básica: Apenas exige que o usuário esteja logado
 function AuthenticatedOnlyRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -67,7 +73,7 @@ function AuthenticatedOnlyRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (!user) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
   return <>{children}</>;
@@ -77,6 +83,22 @@ export default function App() {
   return (
     <AuthProvider>
       <Routes>
+        {/* Rota pública de Vendas (Landing Page) */}
+        <Route path="/vendas" element={<SalesPage />} />
+
+        {/* Rota pública de Checkout */}
+        <Route path="/checkout" element={<CheckoutPage />} />
+
+        {/* Rota do Dashboard de Afiliados */}
+        <Route 
+          path="/afiliados" 
+          element={
+            <AuthenticatedOnlyRoute>
+              <AffiliateDashboard />
+            </AuthenticatedOnlyRoute>
+          } 
+        />
+
         {/* Rota pública de Login */}
         <Route path="/login" element={<Login />} />
 

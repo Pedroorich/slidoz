@@ -21,7 +21,8 @@ export default function Login() {
     if (!loading && user) {
       if (profile) {
         if (profile.role === 'admin') {
-          navigate('/admin');
+          const origin = (location.state as any)?.from?.pathname || '/admin';
+          navigate(origin);
         } else if (isSubscriptionActive) {
           // Redireciona para onde estava tentando ir ou para a Home
           const origin = (location.state as any)?.from?.pathname || '/';

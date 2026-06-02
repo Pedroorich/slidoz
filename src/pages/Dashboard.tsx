@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Sparkles, Grid, Pencil, Trash2, Copy, Play, Folder, ArrowLeft, Wand2 } from 'lucide-react';
+import { Sparkles, Grid, Pencil, Trash2, Copy, Play, Folder, ArrowLeft, Wand2, LogOut, Shield, DollarSign } from 'lucide-react';
 import { get, set } from 'idb-keyval';
+import { useAuth } from '../contexts/AuthContext';
 
 export interface CarouselHistoryItem {
   id: string;
@@ -18,6 +19,7 @@ export interface CarouselHistoryItem {
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { logout, profile } = useAuth();
   const [history, setHistory] = useState<CarouselHistoryItem[]>([]);
   const [selectedProfile, setSelectedProfile] = useState<string | null>(null);
 
@@ -113,10 +115,35 @@ export default function Dashboard() {
           </div>
         </div>
         <div className="flex items-center gap-4">
+          {profile?.role === 'admin' && (
+            <button
+              onClick={() => navigate('/admin')}
+              className="text-xs font-semibold px-4 py-2 bg-[rgba(108,99,255,0.15)] hover:bg-[rgba(108,99,255,0.25)] border border-[rgba(108,99,255,0.3)] rounded-xl text-[#8C85FF] flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <Shield className="w-4 h-4" />
+              Painel Admin
+            </button>
+          )}
+          {profile?.isAffiliate && (
+            <button
+              onClick={() => navigate('/afiliados')}
+              className="text-xs font-semibold px-4 py-2 bg-[rgba(255,101,132,0.15)] hover:bg-[rgba(255,101,132,0.25)] border border-[rgba(255,101,132,0.3)] rounded-xl text-[#FF859F] flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <DollarSign className="w-4 h-4" />
+              Painel Afiliados
+            </button>
+          )}
           <div className="flex items-center gap-2 bg-[rgba(255,255,255,0.05)] px-3 py-1.5 rounded-full border border-[rgba(255,255,255,0.1)]">
             <div className="w-2 h-2 rounded-full bg-green-500 animate-[pulse-green_2s_infinite]"></div>
             <span className="text-xs font-medium text-[rgba(240,240,240,0.8)]">IA Ativa</span>
           </div>
+          <button
+            onClick={() => logout().then(() => navigate('/login'))}
+            className="p-2 text-[rgba(240,240,240,0.5)] hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all cursor-pointer"
+            title="Sair da Conta"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
         </div>
       </header>
 
