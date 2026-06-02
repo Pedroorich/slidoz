@@ -96,6 +96,42 @@ export default function SalesPage() {
     return () => clearTimeout(timer);
   }, []);
 
+  const videoRef = React.useRef<HTMLVideoElement | null>(null);
+
+  // Programmatic trigger for mobile video autoplay
+  useEffect(() => {
+    if (shouldLoadVideo && videoRef.current) {
+      const playVideo = () => {
+        if (videoRef.current) {
+          videoRef.current.play().catch((err) => {
+            console.log("Autoplay blocked, waiting for touch/scroll gesture...", err);
+          });
+        }
+      };
+
+      // Try to play immediately
+      playVideo();
+
+      // User gesture fallbacks for strict browsers/OS low power modes
+      const handleInteraction = () => {
+        playVideo();
+        document.removeEventListener('touchstart', handleInteraction);
+        document.removeEventListener('scroll', handleInteraction);
+        document.removeEventListener('click', handleInteraction);
+      };
+
+      document.addEventListener('touchstart', handleInteraction, { passive: true });
+      document.addEventListener('scroll', handleInteraction, { passive: true });
+      document.addEventListener('click', handleInteraction, { passive: true });
+
+      return () => {
+        document.removeEventListener('touchstart', handleInteraction);
+        document.removeEventListener('scroll', handleInteraction);
+        document.removeEventListener('click', handleInteraction);
+      };
+    }
+  }, [shouldLoadVideo]);
+
 
 
   const toggleFaq = (index: number) => {
@@ -540,6 +576,14 @@ export default function SalesPage() {
         }
 
         /* Responsive Grids */
+        .nav-cta {
+          display: none !important;
+        }
+        @media (min-width: 640px) {
+          .nav-cta {
+            display: inline-flex !important;
+          }
+        }
         @media (max-width: 768px) {
           .hero-grid { grid-template-columns: 1fr !important; gap: 40px !important; text-align: center; }
           .hero-cta-wrap { justify-content: center; }
@@ -613,6 +657,7 @@ export default function SalesPage() {
         {shouldLoadVideo && (
           <div className="absolute inset-0 w-full h-full overflow-hidden pointer-events-none z-0 opacity-80">
             <video 
+              ref={videoRef}
               src="/hero-loop.mp4" 
               autoPlay 
               loop 
