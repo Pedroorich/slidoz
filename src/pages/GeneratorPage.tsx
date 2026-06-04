@@ -130,6 +130,22 @@ export default function GeneratorPage() {
     loadAllGoogleFonts();
     checkApiKey();
     
+    // Sanitize any wrongly placed model values
+    const savedModel = localStorage.getItem('custom_openrouter_model');
+    const validModels = [
+      'google/gemini-2.5-flash',
+      'google/gemini-2.5-pro',
+      'anthropic/claude-3.5-sonnet',
+      'deepseek/deepseek-chat',
+      'meta-llama/llama-3.1-405b-instruct'
+    ];
+    if (savedModel && !validModels.includes(savedModel)) {
+      if (savedModel !== 'Chave teste') {
+        localStorage.setItem('custom_openrouter_model_custom', savedModel);
+      }
+      localStorage.setItem('custom_openrouter_model', 'google/gemini-2.5-flash');
+    }
+    
     // Load from history if passed via state
     if (location.state?.carouselData) {
       const data = location.state.carouselData as CarouselHistoryItem;
@@ -1125,9 +1141,10 @@ export default function GeneratorPage() {
             <div className="flex flex-col gap-2">
               <label className="text-xs font-semibold text-[rgba(240,240,240,0.6)]">Modelo OpenRouter</label>
               <select
-                defaultValue={localStorage.getItem('custom_openrouter_model') || 'google/gemini-2.5-flash'}
+                value={localStorage.getItem('custom_openrouter_model') || 'google/gemini-2.5-flash'}
                 onChange={(e) => {
                   localStorage.setItem('custom_openrouter_model', e.target.value);
+                  setErrorMessage(''); 
                 }}
                 className="w-full p-2.5 bg-[#0A0A0A] border border-[rgba(255,255,255,0.1)] rounded-lg text-sm text-white focus:border-[#6C63FF] outline-none transition-colors"
               >
@@ -1143,12 +1160,15 @@ export default function GeneratorPage() {
                 <input 
                   type="text"
                   placeholder="Ex: google/gemini-2.5-flash"
-                  defaultValue={localStorage.getItem('custom_openrouter_model') || ''}
+                  value={localStorage.getItem('custom_openrouter_model_custom') || ''}
                   onChange={(e) => {
                     const val = e.target.value.trim();
                     if (val) {
-                      localStorage.setItem('custom_openrouter_model', val);
+                      localStorage.setItem('custom_openrouter_model_custom', val);
+                    } else {
+                      localStorage.removeItem('custom_openrouter_model_custom');
                     }
+                    setErrorMessage('');
                   }}
                   className="w-full p-2 bg-[#0A0A0A] border border-[rgba(255,255,255,0.1)] rounded-lg text-xs text-white focus:border-[#6C63FF] outline-none"
                 />

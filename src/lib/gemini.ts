@@ -194,7 +194,7 @@ export async function analyzeCreativeReference(
     const customKey = localStorage.getItem('custom_gemini_key');
     const customOpenRouterKey = localStorage.getItem('custom_openrouter_key');
     const customProvider = localStorage.getItem('custom_ai_provider') || 'gemini';
-    const customModel = localStorage.getItem('custom_openrouter_model') || 'google/gemini-2.5-flash';
+    const customModel = localStorage.getItem('custom_openrouter_model_custom')?.trim() || localStorage.getItem('custom_openrouter_model') || 'google/gemini-2.5-flash';
     
     const isOpenRouter = customProvider === 'openrouter' || (customKey && customKey.startsWith('sk-or-')) || (customOpenRouterKey && customOpenRouterKey.startsWith('sk-or-'));
     const apiKey = isOpenRouter 
@@ -657,7 +657,7 @@ export async function generateCarouselContent(
     const customKey = localStorage.getItem('custom_gemini_key');
     const customOpenRouterKey = localStorage.getItem('custom_openrouter_key');
     const customProvider = localStorage.getItem('custom_ai_provider') || 'gemini';
-    const customModel = localStorage.getItem('custom_openrouter_model') || 'google/gemini-2.5-flash';
+    const customModel = localStorage.getItem('custom_openrouter_model_custom')?.trim() || localStorage.getItem('custom_openrouter_model') || 'google/gemini-2.5-flash';
     
     const isOpenRouter = customProvider === 'openrouter' || (customKey && customKey.startsWith('sk-or-')) || (customOpenRouterKey && customOpenRouterKey.startsWith('sk-or-'));
     const apiKey = isOpenRouter 
