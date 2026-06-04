@@ -1151,6 +1151,21 @@ export default function GeneratorPage() {
                   className="w-full p-2 bg-[#0A0A0A] border border-[rgba(255,255,255,0.1)] rounded-lg text-xs text-white focus:border-[#6C63FF] outline-none"
                 />
               </div>
+
+              <div className="flex flex-col gap-2 mt-2 pt-2 border-t border-[rgba(255,255,255,0.04)]">
+                <label className="text-xs font-semibold text-[rgba(240,240,240,0.6)]">Modelo de Imagem (OpenRouter)</label>
+                <select
+                  defaultValue={localStorage.getItem('custom_openrouter_image_model') || 'google/gemini-2.5-flash-image'}
+                  onChange={(e) => {
+                    localStorage.setItem('custom_openrouter_image_model', e.target.value);
+                  }}
+                  className="w-full p-2.5 bg-[#0A0A0A] border border-[rgba(255,255,255,0.1)] rounded-lg text-sm text-white focus:border-[#6C63FF] outline-none transition-colors"
+                >
+                  <option value="google/gemini-2.5-flash-image">Gemini 2.5 Flash Image (Mais Rápido/Barato)</option>
+                  <option value="google/gemini-3.1-flash-image-preview">Gemini 3.1 Flash Image Preview</option>
+                  <option value="openai/gpt-5-image-mini">GPT Image Mini (DALL-E Equivalent)</option>
+                </select>
+              </div>
             </div>
           )}
 

@@ -62,9 +62,65 @@ export async function generateImage(
   slideIndex?: number
 ): Promise<string> {
   try {
+    const customProvider = localStorage.getItem('custom_ai_provider') || 'gemini';
     const customKey = localStorage.getItem('custom_gemini_key');
-    
-    // Para imagem, precisamos de uma chave do Google Gemini (não OpenRouter)
+    const customOpenRouterKey = localStorage.getItem('custom_openrouter_key');
+    const openRouterModel = localStorage.getItem('custom_openrouter_image_model') || 'google/gemini-2.5-flash-image';
+
+    const isOpenRouter = customProvider === 'openrouter' || (customKey && customKey.startsWith('sk-or-')) || (customOpenRouterKey && customOpenRouterKey.startsWith('sk-or-'));
+
+    if (isOpenRouter) {
+      const apiKey = customOpenRouterKey || customKey || process.env.API_KEY || process.env.GEMINI_API_KEY;
+      if (!apiKey || apiKey === 'DUMMY_KEY') {
+        throw new Error("Chave de API do OpenRouter ausente ou inválida. Insira uma chave nas configurações.");
+      }
+      
+      console.log(`Gerando imagem via OpenRouter usando o modelo: ${openRouterModel}`);
+      
+      const isGeminiImage = openRouterModel.includes('gemini');
+      const messagesContent: any[] = [{ type: "text", text: prompt }];
+      
+      if (referenceImage && isGeminiImage) {
+        messagesContent.push({
+          type: "image_url",
+          image_url: {
+            url: `data:${referenceImage.mimeType};base64,${referenceImage.data}`
+          }
+        });
+      }
+
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: openRouterModel,
+          messages: [
+            {
+              role: "user",
+              content: messagesContent.length === 1 ? prompt : messagesContent
+            }
+          ],
+          modalities: ["image"]
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Erro na API do OpenRouter ao gerar imagem: ${response.status} - ${errorText}`);
+      }
+
+      const resJson = await response.json();
+      const imgUrl = resJson.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+      if (!imgUrl) {
+        throw new Error("A API da OpenRouter não retornou nenhuma imagem no campo esperado.");
+      }
+      return imgUrl;
+    }
+
+    // Caso contrário, usa o fluxo padrão do Google Gemini oficial
     let geminiKey = customKey;
     if (geminiKey && geminiKey.startsWith('sk-or-')) {
       geminiKey = null;
