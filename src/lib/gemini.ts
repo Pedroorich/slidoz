@@ -63,7 +63,11 @@ export async function generateImage(
 ): Promise<string> {
   try {
     const customKey = localStorage.getItem('custom_gemini_key');
-    const currentAi = new GoogleGenAI({ apiKey: customKey || process.env.API_KEY || process.env.GEMINI_API_KEY || "DUMMY_KEY" });
+    const apiKey = customKey || process.env.API_KEY || process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey === 'DUMMY_KEY') {
+      throw new Error("Chave de API do Gemini ausente ou inválida. Insira uma chave nas configurações.");
+    }
+    const currentAi = new GoogleGenAI({ apiKey });
     
     const parts: any[] = [];
 
@@ -246,6 +250,227 @@ CRITICAL RULES:
   `.trim();
 }
 
+export function extractSubject(topic: string): string {
+  let cleaned = topic.trim();
+  // Remove numbers from start (e.g., "5 dicas para..." -> "dicas para...")
+  cleaned = cleaned.replace(/^\d+\s*/, '');
+  // Remove common prefix words (case insensitive)
+  cleaned = cleaned.replace(/^(dicas|passos|segredos|regras|maneiras|formas|erros|como|guia|manual|tudo sobre)\s+(para|de|sobre|ao|a)?\s*/i, '');
+  cleaned = cleaned.trim();
+  // Capitalize first letter
+  if (cleaned.length > 0) {
+    cleaned = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+  }
+  return cleaned || topic;
+}
+
+export function generateLocalCarouselFallback(
+  topic: string,
+  numSlides: number,
+  tone: string,
+  brandName: string,
+  includeImages: boolean = false,
+  isSeamless: boolean = false
+): SlideData[] {
+  const subject = extractSubject(topic);
+  
+  const templates = [
+    // 0: Hero
+    (subj: string, brand: string) => ({
+      type: 'hero' as const,
+      background: 'brand-gradient' as const,
+      tag: 'GUIA PRÁTICO',
+      title: `Como Dominar:<br><span class="text-white font-extrabold">${subj}</span>`,
+      content: 'Descubra a metodologia simples e eficiente para alcançar seus objetivos sem perder tempo.',
+      alignment: 'center' as const
+    }),
+    // 1: Problem
+    (subj: string, brand: string) => ({
+      type: 'problem' as const,
+      background: 'dark' as const,
+      tag: 'ERROS COMUNS',
+      title: 'Por que a maioria falha no início?',
+      content: `Tentar dominar <strong>${subj}</strong> sem um método estruturado é o caminho mais rápido para a frustração. A falta de foco e consistência faz 90% das pessoas desistirem.`,
+      alignment: 'left' as const
+    }),
+    // 2: Alerta
+    (subj: string, brand: string) => ({
+      type: 'problem' as const,
+      background: 'dark' as const,
+      tag: 'ATENÇÃO',
+      title: 'O perigo de procrastinar',
+      content: `Adiar o início de <strong>${subj}</strong> é o maior sabotador do seu crescimento. Cada dia de espera é uma oportunidade perdida para evoluir e se destacar.`,
+      alignment: 'left' as const
+    }),
+    // 3: Solution
+    (subj: string, brand: string) => ({
+      type: 'solution' as const,
+      background: 'light' as const,
+      tag: 'A SOLUÇÃO',
+      title: 'O Segredo Está na Metodologia',
+      content: `A solução ideal para <strong>${subj}</strong> exige consistência diária e processos claros. Dividir a jornada em pequenas etapas torna o progresso inevitável.`,
+      quote: { label: 'Foco no Processo', text: 'A consistência supera a intensidade. Pequenos passos geram grandes resultados.' },
+      alignment: 'left' as const
+    }),
+    // 4: 3 Pillars (Features)
+    (subj: string, brand: string) => ({
+      type: 'features' as const,
+      background: 'light' as const,
+      tag: 'PILARES',
+      title: '3 Pilares Indispensáveis',
+      content: 'Para ter sucesso, foque na execução destes três fundamentos essenciais:',
+      items: [
+        { icon: '🎯', label: 'Clareza', description: 'Tenha metas bem definidas e mensuráveis.' },
+        { icon: '⚡', label: 'Ação', description: 'Pratique todos os dias, mesmo que por poucos minutos.' },
+        { icon: '📈', label: 'Ajuste', description: 'Analise seus resultados e corrija a rota constantemente.' }
+      ],
+      alignment: 'left' as const
+    }),
+    // 5: Step 1 Details
+    (subj: string, brand: string) => ({
+      type: 'details' as const,
+      background: 'dark' as const,
+      tag: 'PASSO 1',
+      title: 'Fase 1: Planejamento',
+      content: 'Antes de começar a executar, defina seu objetivo. Um bom planejamento poupa 80% do esforço desnecessário na hora de colocar a mão na massa.',
+      alignment: 'left' as const
+    }),
+    // 6: Step 2 Details
+    (subj: string, brand: string) => ({
+      type: 'details' as const,
+      background: 'dark' as const,
+      tag: 'PASSO 2',
+      title: 'Fase 2: Execução',
+      content: 'A perfeição é inimiga da ação. Foque em começar e manter a regularidade. É através da prática que a verdadeira habilidade se desenvolve.',
+      alignment: 'left' as const
+    }),
+    // 7: Step 3 Details
+    (subj: string, brand: string) => ({
+      type: 'details' as const,
+      background: 'dark' as const,
+      tag: 'PASSO 3',
+      title: 'Fase 3: Otimização',
+      content: 'Aprenda com seus erros e acertos. Otimizar seu processo em 1% todos os dias gera um impacto gigantesco ao longo do ano.',
+      alignment: 'left' as const
+    }),
+    // 8: Hack
+    (subj: string, brand: string) => ({
+      type: 'details' as const,
+      background: 'light' as const,
+      tag: 'SEGREDO',
+      title: 'O hack da consistência',
+      content: 'Não dependa de motivação. Crie um ambiente favorável que force você a agir. A disciplina vence a motivação em 100% das vezes.',
+      alignment: 'left' as const
+    }),
+    // 9: Mito ou Verdade
+    (subj: string, brand: string) => ({
+      type: 'details' as const,
+      background: 'light' as const,
+      tag: 'MITO OU VERDADE',
+      title: 'Precisa de talento natural?',
+      content: `<strong>Mito!</strong> Ninguém nasce sabendo <strong>${subj}</strong>. O sucesso é fruto de técnica, repetição e persistência. A prática supera qualquer talento.`,
+      alignment: 'left' as const
+    }),
+    // 10: How-to
+    (subj: string, brand: string) => ({
+      type: 'how-to' as const,
+      background: 'light' as const,
+      tag: 'PASSO A PASSO',
+      title: 'Plano de Ação Prático',
+      content: 'Comece a aplicar esse método hoje mesmo seguindo estas etapas simples:',
+      items: [
+        { label: '1. Organize', description: 'Dedique 15 minutos para planejar seu dia.' },
+        { label: '2. Comece', description: 'Inicie pela tarefa mais importante.' },
+        { label: '3. Revise', description: 'Veja o que funcionou e o que pode melhorar.' }
+      ],
+      alignment: 'left' as const
+    }),
+    // 11: Checklist
+    (subj: string, brand: string) => ({
+      type: 'features' as const,
+      background: 'light' as const,
+      tag: 'CHECKLIST',
+      title: 'Checklist de Sucesso',
+      content: `Garanta que você possui tudo o que precisa para progredir em <strong>${subj}</strong>:`,
+      items: [
+        { icon: '✓', label: 'Meta clara definida por escrito' },
+        { icon: '✓', label: 'Agenda reservada para execução diária' },
+        { icon: '✓', label: 'Ambiente livre de distrações' }
+      ],
+      alignment: 'left' as const
+    }),
+    // 12: Inspiração
+    (subj: string, brand: string) => ({
+      type: 'details' as const,
+      background: 'dark' as const,
+      tag: 'INSPIRAÇÃO',
+      title: 'O impacto a longo prazo',
+      content: 'Imagine onde você estará daqui a um ano se começar a praticar hoje. O tempo vai passar de qualquer forma; a escolha de como usá-lo é sua.',
+      alignment: 'left' as const
+    }),
+    // 13: Mindset
+    (subj: string, brand: string) => ({
+      type: 'details' as const,
+      background: 'dark' as const,
+      tag: 'MINDSET',
+      title: 'A Mentalidade Correta',
+      content: 'O sucesso não acontece por acaso. Ele é o resultado direto de hábitos diários construídos com foco e propósito. Não pare até se orgulhar do seu progresso.',
+      alignment: 'left' as const
+    }),
+    // 14: CTA
+    (subj: string, brand: string) => ({
+      type: 'cta' as const,
+      background: 'brand-gradient' as const,
+      tag: 'DICA DE OURO',
+      title: 'Quer aprender mais sobre isso?',
+      content: `Deixe um comentário com sua principal dúvida sobre <strong>${subj}</strong>!<br>Siga <strong>@${brand}</strong> para receber conteúdos diários de alto valor.`,
+      ctaText: `Seguir @${brand}`,
+      alignment: 'center' as const
+    })
+  ];
+
+  const middleTemplates = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
+  const slides: SlideData[] = [];
+
+  // Add Hero
+  slides.push({
+    ...templates[0](subject, brandName),
+    id: Math.random().toString(36).substring(7),
+    extendBackgroundToNext: isSeamless
+  });
+
+  if (numSlides === 2) {
+    slides.push({
+      ...templates[14](subject, brandName),
+      id: Math.random().toString(36).substring(7)
+    });
+  } else if (numSlides > 2) {
+    const middleCount = numSlides - 2;
+    const step = (middleTemplates.length - 1) / (middleCount - 1 || 1);
+    const selectedIndices = Array.from({ length: middleCount }).map((_, i) => Math.round(i * step));
+
+    selectedIndices.forEach((idx, i) => {
+      const templateIndex = middleTemplates[idx];
+      const slideIndex = i + 1;
+      const isEven = slideIndex % 2 === 0;
+      
+      slides.push({
+        ...templates[templateIndex](subject, brandName),
+        id: Math.random().toString(36).substring(7),
+        extendBackgroundToNext: isSeamless && !isEven
+      });
+    });
+
+    // Add CTA
+    slides.push({
+      ...templates[14](subject, brandName),
+      id: Math.random().toString(36).substring(7)
+    });
+  }
+
+  return slides;
+}
+
 export async function generateCarouselContent(
   topic: string,
   numSlides: number,
@@ -280,7 +505,7 @@ export async function generateCarouselContent(
     Retorne um array JSON de slides. Cada slide deve ter:
     - type: 'hero', 'problem', 'solution', 'features', 'details', 'how-to', ou 'cta'
     - background: 'light', 'dark', ou 'brand-gradient'
-    - tag: Uma categoria curta em maiúsculas. MÁXIMO 2 PALAVRAS.
+    - tag: Uma categoria corta em maiúsculas. MÁXIMO 2 PALAVRAS.
     - title: O título principal do slide.
     - content: Texto de corpo com o conteúdo real e educativo do post.
     - items: Array de { label, description } para features ou passos (opcional)
@@ -295,7 +520,13 @@ export async function generateCarouselContent(
 
   try {
     const customKey = localStorage.getItem('custom_gemini_key');
-    const currentAi = new GoogleGenAI({ apiKey: customKey || process.env.API_KEY || process.env.GEMINI_API_KEY || "DUMMY_KEY" });
+    const apiKey = customKey || process.env.API_KEY || process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey === 'DUMMY_KEY') {
+      console.warn("Nenhuma chave Gemini configurada. Usando fallback local.");
+      return generateLocalCarouselFallback(topic, numSlides, tone, brandName, includeImages, isSeamless);
+    }
+
+    const currentAi = new GoogleGenAI({ apiKey });
     
     const response = await currentAi.models.generateContent({
       model: "gemini-3.5-flash",
@@ -414,7 +645,7 @@ export async function generateCarouselContent(
       return { ...s, id: Math.random().toString(36).substring(7) };
     });
   } catch (error: any) {
-    console.error("Erro na geração do Gemini:", error);
-    throw new Error(error.message || "Falha ao gerar o conteúdo do carrossel.");
+    console.error("Erro na geração do Gemini, usando fallback local:", error);
+    return generateLocalCarouselFallback(topic, numSlides, tone, brandName, includeImages, isSeamless);
   }
 }

@@ -18,6 +18,7 @@ export default function CheckoutPage() {
   const ANNUAL_LINK = import.meta.env.VITE_INFINITEPAY_ANNUAL || 'https://pay.infinitepay.io/slidoz/anual';
   const supportWhatsapp = import.meta.env.VITE_WHATSAPP_NUMBER || '5511999999999';
 
+  const selectedPlan = (location.state as any)?.plan || 'monthly';
   const planName = selectedPlan === 'annual' ? 'Plano Anual SlidOz' : 'Plano Mensal SlidOz';
   const planPrice = selectedPlan === 'annual' ? 'R$ 297,00/ano' : 'R$ 97,90/mês';
   const finalLink = selectedPlan === 'annual' ? ANNUAL_LINK : MONTHLY_LINK;
