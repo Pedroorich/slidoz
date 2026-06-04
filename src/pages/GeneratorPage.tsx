@@ -1159,18 +1159,34 @@ export default function GeneratorPage() {
               {localStorage.getItem('custom_ai_provider') === 'openrouter' ? 'Chave de API OpenRouter' : 'Gemini API Key (Opcional)'}
             </label>
             <input 
+              key={localStorage.getItem('custom_ai_provider') || 'gemini'}
               type="password" 
               placeholder={localStorage.getItem('custom_ai_provider') === 'openrouter' ? 'sk-or-...' : 'Cole sua chave do Gemini aqui...'}
-              defaultValue={localStorage.getItem('custom_gemini_key') || ''}
+              defaultValue={
+                localStorage.getItem('custom_ai_provider') === 'openrouter' 
+                  ? (localStorage.getItem('custom_openrouter_key') || '') 
+                  : (localStorage.getItem('custom_gemini_key') || '')
+              }
               onChange={(e) => {
                 const val = e.target.value.trim();
-                if (val) {
-                  localStorage.setItem('custom_gemini_key', val);
-                  if (val.startsWith('sk-or-')) {
-                    localStorage.setItem('custom_ai_provider', 'openrouter');
+                const provider = localStorage.getItem('custom_ai_provider') || 'gemini';
+                if (provider === 'openrouter') {
+                  if (val) {
+                    localStorage.setItem('custom_openrouter_key', val);
+                  } else {
+                    localStorage.removeItem('custom_openrouter_key');
                   }
                 } else {
-                  localStorage.removeItem('custom_gemini_key');
+                  if (val) {
+                    localStorage.setItem('custom_gemini_key', val);
+                    if (val.startsWith('sk-or-')) {
+                      localStorage.setItem('custom_ai_provider', 'openrouter');
+                      localStorage.setItem('custom_openrouter_key', val);
+                      localStorage.removeItem('custom_gemini_key');
+                    }
+                  } else {
+                    localStorage.removeItem('custom_gemini_key');
+                  }
                 }
                 // force update
                 setErrorMessage('');
@@ -1184,9 +1200,7 @@ export default function GeneratorPage() {
             </p>
           </div>
         </div>
-      </div>
-
-      {errorMessage && (
+      </div>     {errorMessage && (
         <div className="p-3 bg-[rgba(255,69,58,0.1)] border border-[rgba(255,69,58,0.2)] text-[#FF453A] text-sm rounded-xl">
           {errorMessage}
         </div>

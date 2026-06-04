@@ -63,9 +63,17 @@ export async function generateImage(
 ): Promise<string> {
   try {
     const customKey = localStorage.getItem('custom_gemini_key');
-    const apiKey = customKey || process.env.API_KEY || process.env.GEMINI_API_KEY;
-    if (!apiKey || apiKey === 'DUMMY_KEY') {
-      throw new Error("Chave de API do Gemini ausente ou inválida. Insira uma chave nas configurações.");
+    
+    // Para imagem, precisamos de uma chave do Google Gemini (não OpenRouter)
+    let geminiKey = customKey;
+    if (geminiKey && geminiKey.startsWith('sk-or-')) {
+      geminiKey = null;
+    }
+    
+    const apiKey = geminiKey || process.env.API_KEY || process.env.GEMINI_API_KEY;
+    
+    if (!apiKey || apiKey === 'DUMMY_KEY' || apiKey.startsWith('sk-or-')) {
+      throw new Error("Chave de API do Gemini inválida ou ausente. A geração de imagens requer uma chave oficial do Google Gemini (as chaves da OpenRouter são válidas apenas para texto). Por favor, configure sua chave do Gemini nas configurações.");
     }
     const currentAi = new GoogleGenAI({ apiKey });
     
@@ -120,7 +128,55 @@ export async function analyzeCreativeReference(
 ): Promise<string> {
   try {
     const customKey = localStorage.getItem('custom_gemini_key');
-    const currentAi = new GoogleGenAI({ apiKey: customKey || process.env.API_KEY || process.env.GEMINI_API_KEY || "DUMMY_KEY" });
+    const customOpenRouterKey = localStorage.getItem('custom_openrouter_key');
+    const customProvider = localStorage.getItem('custom_ai_provider') || 'gemini';
+    const customModel = localStorage.getItem('custom_openrouter_model') || 'google/gemini-2.5-flash';
+    
+    const isOpenRouter = customProvider === 'openrouter' || (customKey && customKey.startsWith('sk-or-')) || (customOpenRouterKey && customOpenRouterKey.startsWith('sk-or-'));
+    const apiKey = isOpenRouter 
+      ? (customOpenRouterKey || customKey || process.env.API_KEY || process.env.GEMINI_API_KEY || "DUMMY_KEY")
+      : (customKey || process.env.API_KEY || process.env.GEMINI_API_KEY || "DUMMY_KEY");
+
+    const promptText = "Analyze this image and describe its core visual style. Focus exclusively on lighting, color palette, camera effects, artistic medium/texture, and mood. Provide a concise, highly descriptive 2-sentence prompt fragment that can be used to instruct an image generator to replicate this exact same visual styling and framing.";
+
+    if (isOpenRouter) {
+      console.log(`Analisando referência criativa com OpenRouter usando o modelo: ${customModel}`);
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: customModel,
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: promptText },
+                {
+                  type: "image_url",
+                  image_url: {
+                    url: `data:${referenceImage.mimeType};base64,${referenceImage.data}`
+                  }
+                }
+              ]
+            }
+          ],
+          max_tokens: 250
+        })
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Erro na API do OpenRouter ao analisar referência: ${response.status} - ${errText}`);
+      }
+
+      const resJson = await response.json();
+      return resJson.choices?.[0]?.message?.content || "";
+    }
+
+    const currentAi = new GoogleGenAI({ apiKey });
     
     const parts = [
       {
@@ -129,7 +185,7 @@ export async function analyzeCreativeReference(
           mimeType: referenceImage.mimeType
         }
       },
-      { text: "Analyze this image and describe its core visual style. Focus exclusively on lighting, color palette, camera effects, artistic medium/texture, and mood. Provide a concise, highly descriptive 2-sentence prompt fragment that can be used to instruct an image generator to replicate this exact same visual styling and framing." }
+      { text: promptText }
     ];
 
     const response = await currentAi.models.generateContent({
@@ -520,16 +576,19 @@ export async function generateCarouselContent(
 
   try {
     const customKey = localStorage.getItem('custom_gemini_key');
+    const customOpenRouterKey = localStorage.getItem('custom_openrouter_key');
     const customProvider = localStorage.getItem('custom_ai_provider') || 'gemini';
     const customModel = localStorage.getItem('custom_openrouter_model') || 'google/gemini-2.5-flash';
     
-    const apiKey = customKey || process.env.API_KEY || process.env.GEMINI_API_KEY;
+    const isOpenRouter = customProvider === 'openrouter' || (customKey && customKey.startsWith('sk-or-')) || (customOpenRouterKey && customOpenRouterKey.startsWith('sk-or-'));
+    const apiKey = isOpenRouter 
+      ? (customOpenRouterKey || customKey || process.env.API_KEY || process.env.GEMINI_API_KEY)
+      : (customKey || process.env.API_KEY || process.env.GEMINI_API_KEY);
+
     if (!apiKey || apiKey === 'DUMMY_KEY') {
-      console.warn("Nenhuma chave Gemini configurada. Usando fallback local.");
+      console.warn("Nenhuma chave configurada. Usando fallback local.");
       return generateLocalCarouselFallback(topic, numSlides, tone, brandName, includeImages, isSeamless);
     }
-
-    const isOpenRouter = customProvider === 'openrouter' || apiKey.startsWith('sk-or-');
 
     if (isOpenRouter) {
       console.log(`Usando OpenRouter com o modelo: ${customModel}`);
