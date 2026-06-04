@@ -107,7 +107,8 @@ export async function generateImage(
               content: messagesContent.length === 1 ? prompt : messagesContent
             }
           ],
-          modalities
+          modalities,
+          max_tokens: 1000
         })
       });
 
@@ -682,7 +683,8 @@ export async function generateCarouselContent(
           { role: 'user', content: prompt }
         ],
         temperature: 0.7,
-        response_format: { type: "json_object" }
+        response_format: { type: "json_object" },
+        max_tokens: 4000
       };
 
       const openRouterResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
