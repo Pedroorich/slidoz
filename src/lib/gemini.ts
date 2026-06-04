@@ -591,7 +591,19 @@ export function generateLocalCarouselFallback(
     });
   }
 
-  return slides;
+  return slides.map((s, index) => {
+    // If seamless, even slides might not have an image description
+    const isEvenSeamlessSlide = isSeamless && index % 2 !== 0;
+    
+    if (includeImages && !isEvenSeamlessSlide) {
+      return {
+        ...s,
+        imageDescription: `Cena abstrata impactante representando "${topic}", estilo editorial, iluminação dramática lateral, cores coerentes com tom ${tone}, sem texto, composição cinematográfica, bokeh suave.`,
+        imagePosition: s.imagePosition || 'center'
+      };
+    }
+    return s;
+  });
 }
 
 export async function generateCarouselContent(
@@ -834,7 +846,17 @@ export async function generateCarouselContent(
       return { ...s, id: Math.random().toString(36).substring(7) };
     });
   } catch (error: any) {
-    console.error("Erro na geração do Gemini, usando fallback local:", error);
+    console.error("Erro na geração do Gemini/OpenRouter:", error);
+    
+    const customKey = localStorage.getItem('custom_gemini_key');
+    const customOpenRouterKey = localStorage.getItem('custom_openrouter_key');
+    const customProvider = localStorage.getItem('custom_ai_provider');
+    
+    // Se o usuário configurou uma chave ou provedor customizado, lança o erro para que ele saiba por que falhou
+    if (customKey || customOpenRouterKey || customProvider === 'openrouter') {
+      throw error;
+    }
+    
     return generateLocalCarouselFallback(topic, numSlides, tone, brandName, includeImages, isSeamless);
   }
 }
