@@ -189,8 +189,27 @@ export default function AffiliateDashboard() {
 
   const getFormatDate = (timestamp: any) => {
     if (!timestamp) return 'Processando';
-    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-    return date.toLocaleDateString('pt-BR');
+    try {
+      let date: Date;
+      if (timestamp.toDate && typeof timestamp.toDate === 'function') {
+        date = timestamp.toDate();
+      } else if (timestamp.seconds !== undefined) {
+        date = new Date(timestamp.seconds * 1000);
+      } else if (timestamp instanceof Date) {
+        date = timestamp;
+      } else {
+        date = new Date(timestamp);
+      }
+      
+      if (isNaN(date.getTime())) {
+        return 'Processando';
+      }
+      
+      return date.toLocaleDateString('pt-BR');
+    } catch (err) {
+      console.error("Erro ao formatar data:", err, timestamp);
+      return 'Processando';
+    }
   };
 
   // Se o usuário não estiver logado

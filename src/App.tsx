@@ -12,7 +12,7 @@ import AffiliateDashboard from './pages/AffiliateDashboard';
 
 // Rota protegida: Exige login e assinatura ativa (ou cargo admin)
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading, isSubscriptionActive, isAdmin } = useAuth();
+  const { user, loading, isSubscriptionActive, isAdmin, profile } = useAuth();
   const location = useLocation();
   
   if (loading) {
@@ -30,6 +30,11 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   // Admin sempre tem acesso completo
   if (isAdmin) {
     return <>{children}</>;
+  }
+
+  // Se o usuário for afiliado mas a assinatura dele expirou, manda ele para a página de afiliados
+  if (profile?.isAffiliate) {
+    return <Navigate to="/afiliados" replace />;
   }
 
   if (!isSubscriptionActive) {

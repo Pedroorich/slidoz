@@ -1103,23 +1103,84 @@ export default function GeneratorPage() {
       <div className="bg-[#161616] border border-[rgba(255,255,255,0.06)] rounded-xl overflow-hidden">
         <div className="p-4 flex flex-col gap-4">
           <div className="flex flex-col gap-2">
-            <label className="text-xs font-medium text-[rgba(240,240,240,0.6)]">Gemini API Key (Opcional)</label>
+            <label className="text-xs font-semibold text-[rgba(240,240,240,0.6)]">Provedor de IA</label>
+            <select
+              value={localStorage.getItem('custom_ai_provider') || 'gemini'}
+              onChange={(e) => {
+                const val = e.target.value;
+                localStorage.setItem('custom_ai_provider', val);
+                // force re-render
+                setErrorMessage(''); 
+              }}
+              className="w-full p-2.5 bg-[#0A0A0A] border border-[rgba(255,255,255,0.1)] rounded-lg text-sm text-white focus:border-[#6C63FF] outline-none transition-colors"
+            >
+              <option value="gemini">Google Gemini (Oficial)</option>
+              <option value="openrouter">OpenRouter API (Claude, GPT, Gemini...)</option>
+            </select>
+          </div>
+
+          {(localStorage.getItem('custom_ai_provider') === 'openrouter') && (
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-semibold text-[rgba(240,240,240,0.6)]">Modelo OpenRouter</label>
+              <select
+                defaultValue={localStorage.getItem('custom_openrouter_model') || 'google/gemini-2.5-flash'}
+                onChange={(e) => {
+                  localStorage.setItem('custom_openrouter_model', e.target.value);
+                }}
+                className="w-full p-2.5 bg-[#0A0A0A] border border-[rgba(255,255,255,0.1)] rounded-lg text-sm text-white focus:border-[#6C63FF] outline-none transition-colors"
+              >
+                <option value="google/gemini-2.5-flash">Gemini 2.5 Flash (Rápido e Barato)</option>
+                <option value="google/gemini-2.5-pro">Gemini 2.5 Pro (Extremamente Preciso)</option>
+                <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet (Excelente Roteiro)</option>
+                <option value="deepseek/deepseek-chat">DeepSeek V3 (Custo-Benefício)</option>
+                <option value="meta-llama/llama-3.1-405b-instruct">Llama 3.1 405B</option>
+              </select>
+              
+              <div className="flex flex-col gap-1.5 mt-1">
+                <span className="text-[10px] text-[rgba(255,255,255,0.4)]">Modelo Personalizado (Opcional)</span>
+                <input 
+                  type="text"
+                  placeholder="Ex: google/gemini-2.5-flash"
+                  defaultValue={localStorage.getItem('custom_openrouter_model') || ''}
+                  onChange={(e) => {
+                    const val = e.target.value.trim();
+                    if (val) {
+                      localStorage.setItem('custom_openrouter_model', val);
+                    }
+                  }}
+                  className="w-full p-2 bg-[#0A0A0A] border border-[rgba(255,255,255,0.1)] rounded-lg text-xs text-white focus:border-[#6C63FF] outline-none"
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-col gap-2">
+            <label className="text-xs font-medium text-[rgba(240,240,240,0.6)]">
+              {localStorage.getItem('custom_ai_provider') === 'openrouter' ? 'Chave de API OpenRouter' : 'Gemini API Key (Opcional)'}
+            </label>
             <input 
               type="password" 
-              placeholder="Cole sua chave aqui caso a do sistema falhe..."
+              placeholder={localStorage.getItem('custom_ai_provider') === 'openrouter' ? 'sk-or-...' : 'Cole sua chave do Gemini aqui...'}
               defaultValue={localStorage.getItem('custom_gemini_key') || ''}
               onChange={(e) => {
                 const val = e.target.value.trim();
                 if (val) {
                   localStorage.setItem('custom_gemini_key', val);
+                  if (val.startsWith('sk-or-')) {
+                    localStorage.setItem('custom_ai_provider', 'openrouter');
+                  }
                 } else {
                   localStorage.removeItem('custom_gemini_key');
                 }
+                // force update
+                setErrorMessage('');
               }}
               className="w-full p-2.5 bg-[#0A0A0A] border border-[rgba(255,255,255,0.1)] rounded-lg text-sm text-white focus:border-[#6C63FF] outline-none transition-colors"
             />
             <p className="text-[10px] text-[rgba(255,255,255,0.4)]">
-              Se você ver um erro de "Permission denied" ou "suspended", insira sua própria chave do Google AI Studio aqui para contornar o problema.
+              {localStorage.getItem('custom_ai_provider') === 'openrouter'
+                ? 'Insira sua chave obtida no painel da OpenRouter para usar modelos como Claude, GPT ou Gemini.'
+                : 'Se você ver um erro de "Permission denied" ou "suspended", insira sua própria chave do Google AI Studio aqui para contornar o problema.'}
             </p>
           </div>
         </div>

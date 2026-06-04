@@ -520,10 +520,70 @@ export async function generateCarouselContent(
 
   try {
     const customKey = localStorage.getItem('custom_gemini_key');
+    const customProvider = localStorage.getItem('custom_ai_provider') || 'gemini';
+    const customModel = localStorage.getItem('custom_openrouter_model') || 'google/gemini-2.5-flash';
+    
     const apiKey = customKey || process.env.API_KEY || process.env.GEMINI_API_KEY;
     if (!apiKey || apiKey === 'DUMMY_KEY') {
       console.warn("Nenhuma chave Gemini configurada. Usando fallback local.");
       return generateLocalCarouselFallback(topic, numSlides, tone, brandName, includeImages, isSeamless);
+    }
+
+    const isOpenRouter = customProvider === 'openrouter' || apiKey.startsWith('sk-or-');
+
+    if (isOpenRouter) {
+      console.log(`Usando OpenRouter com o modelo: ${customModel}`);
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`
+      };
+      
+      const requestBody = {
+        model: customModel,
+        messages: [
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.7,
+        response_format: { type: "json_object" }
+      };
+
+      const openRouterResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: headers,
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!openRouterResponse.ok) {
+        const errorText = await openRouterResponse.text();
+        throw new Error(`Erro na API do OpenRouter: ${openRouterResponse.status} - ${errorText}`);
+      }
+
+      const resJson = await openRouterResponse.json();
+      const contentText = resJson.choices?.[0]?.message?.content;
+      if (!contentText) {
+        throw new Error("A API do OpenRouter não retornou conteúdo na resposta.");
+      }
+
+      let slides = JSON.parse(contentText.trim());
+      
+      if (!Array.isArray(slides)) {
+        if (slides && typeof slides === 'object' && Array.isArray(slides.slides)) {
+          slides = slides.slides;
+        } else {
+          slides = [slides];
+        }
+      }
+
+      return slides.map((s: any, index: number) => {
+        const isEvenSeamlessSlide = isSeamless && index % 2 !== 0;
+        if (includeImages && !isEvenSeamlessSlide && (!s.imageDescription || s.imageDescription.trim() === '')) {
+          s.imageDescription = `Cena abstrata impactante representando "${topic}", estilo editorial, iluminação dramática lateral, cores coerentes com tom ${tone}, sem texto, composição cinematográfica, bokeh suave.`;
+        }
+        if (includeImages && !s.imagePosition) {
+          s.imagePosition = 'center';
+        }
+        return { ...s, id: Math.random().toString(36).substring(7) };
+      });
     }
 
     const currentAi = new GoogleGenAI({ apiKey });

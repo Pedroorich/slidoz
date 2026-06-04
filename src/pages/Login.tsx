@@ -23,6 +23,10 @@ export default function Login() {
         if (profile.role === 'admin') {
           const origin = (location.state as any)?.from?.pathname || '/admin';
           navigate(origin);
+        } else if (profile.isAffiliate) {
+          // Afiliado sempre vai para o Painel de Afiliados ao logar, mesmo se a assinatura do gerador estiver inativa
+          const origin = (location.state as any)?.from?.pathname || '/afiliados';
+          navigate(origin);
         } else if (isSubscriptionActive) {
           // Redireciona para onde estava tentando ir ou para a Home
           const origin = (location.state as any)?.from?.pathname || '/';
