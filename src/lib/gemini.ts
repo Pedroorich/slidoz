@@ -89,6 +89,10 @@ export async function generateImage(
         });
       }
 
+      // Configurar modalidades com base no modelo. Modelos do Gemini e OpenAI exigem ["image", "text"]
+      const isMultimodalImage = openRouterModel.includes('gemini') || openRouterModel.includes('openai') || openRouterModel === 'openrouter/auto';
+      const modalities = isMultimodalImage ? ["image", "text"] : ["image"];
+
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -103,7 +107,7 @@ export async function generateImage(
               content: messagesContent.length === 1 ? prompt : messagesContent
             }
           ],
-          modalities: ["image"]
+          modalities
         })
       });
 
@@ -113,9 +117,13 @@ export async function generateImage(
       }
 
       const resJson = await response.json();
+      if (resJson.error) {
+        throw new Error(`Erro retornado pela API do OpenRouter ao gerar imagem: ${resJson.error.message || JSON.stringify(resJson.error)}`);
+      }
+
       const imgUrl = resJson.choices?.[0]?.message?.images?.[0]?.image_url?.url;
       if (!imgUrl) {
-        throw new Error("A API da OpenRouter não retornou nenhuma imagem no campo esperado.");
+        throw new Error(`A API da OpenRouter não retornou nenhuma imagem no campo esperado. Resposta: ${JSON.stringify(resJson)}`);
       }
       return imgUrl;
     }
@@ -229,6 +237,9 @@ export async function analyzeCreativeReference(
       }
 
       const resJson = await response.json();
+      if (resJson.error) {
+        throw new Error(`Erro retornado pela API do OpenRouter ao analisar referência: ${resJson.error.message || JSON.stringify(resJson.error)}`);
+      }
       return resJson.choices?.[0]?.message?.content || "";
     }
 
@@ -670,10 +681,13 @@ export async function generateCarouselContent(
 
       if (!openRouterResponse.ok) {
         const errorText = await openRouterResponse.text();
-        throw new Error(`Erro na API do OpenRouter: ${openRouterResponse.status} - ${errorText}`);
+        throw new Error(`Erro na API do OpenRouter ao gerar roteiro: ${openRouterResponse.status} - ${errorText}`);
       }
 
       const resJson = await openRouterResponse.json();
+      if (resJson.error) {
+        throw new Error(`Erro retornado pela API do OpenRouter ao gerar roteiro: ${resJson.error.message || JSON.stringify(resJson.error)}`);
+      }
       const contentText = resJson.choices?.[0]?.message?.content;
       if (!contentText) {
         throw new Error("A API do OpenRouter não retornou conteúdo na resposta.");

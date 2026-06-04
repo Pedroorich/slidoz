@@ -330,6 +330,7 @@ export default function GeneratorPage() {
       setCurrentIndex(0);
       
       let hasImageErrors = false;
+      let lastImageError: string | null = null;
       if (includeImages) {
         clearInterval(progressInterval);
 
@@ -372,9 +373,10 @@ export default function GeneratorPage() {
                 
                 finalSlides[index] = { ...slide, imageUrl };
                 setSlides([...finalSlides]);
-              } catch (e) {
+              } catch (e: any) {
                 console.error("Erro na imagem do slide", slide.id, e);
                 hasImageErrors = true;
+                lastImageError = e.message || String(e);
               } finally {
                 completedCount++;
                 setProgressText(`Gerando imagens... (${completedCount} de ${totalImages})`);
@@ -407,7 +409,7 @@ export default function GeneratorPage() {
       }
       
       if (hasImageErrors) {
-        setErrorMessage('O carrossel foi gerado, mas houve um erro ao gerar algumas imagens com a IA. Você pode tentar gerar novamente ou adicionar suas próprias imagens.');
+        setErrorMessage(`O carrossel foi gerado, mas houve um erro ao gerar as imagens: ${lastImageError || 'Erro desconhecido'}. Você pode tentar gerar novamente ou adicionar suas próprias imagens.`);
       }
     } catch (error: any) {
       console.error(error);
