@@ -673,10 +673,10 @@ export default function SalesPage() {
           </div>
         )}
 
-        <div className="flex flex-col items-center justify-center text-center max-w-4xl mx-auto relative z-10">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center max-w-6xl mx-auto relative z-10">
           
-          {/* Persuasive business-first copywriting */}
-          <div className="reveal reveal-slide-up relative z-10 flex flex-col items-center">
+          {/* Persuasive business-first copywriting (Left Column) */}
+          <div className="lg:col-span-7 flex flex-col items-center lg:items-start text-center lg:text-left reveal reveal-slide-up relative z-10">
             <div className="inline-flex items-center gap-2 bg-[#2E1065]/40 border border-[#7C3AED]/20 px-4 py-1.5 rounded-full text-xs font-semibold text-mist mb-6 shadow-[0_0_15px_rgba(124,58,237,0.15)] animate-border-shimmer">
               <Sparkles className="w-3.5 h-3.5 text-mist animate-pulse" />
               SaaS Inovador de Design por IA
@@ -686,20 +686,41 @@ export default function SalesPage() {
               Deixe a Inteligência Artificial criar <span className="font-brand-italic text-transparent bg-clip-text bg-gradient-to-r from-violet-300 via-fuchsia-300 to-indigo-200">carrosséis mágicos</span> para seu negócio.
             </h1>
             
-            <p className="text-base md:text-lg text-cream/70 leading-relaxed mb-8 max-w-2xl mx-auto">
+            <p className="text-base md:text-lg text-cream/70 leading-relaxed mb-8 max-w-2xl mx-auto lg:mx-0">
               Transforme ideias simples em carrosséis ultra-profissionais com roteiros magnéticos estruturados de copy, paletas otimizadas e imagens IA de alta fidelidade. <strong className="font-bold text-cream">Economize R$ 1.500/mês em designers lerdos com a velocidade do automático.</strong>
             </p>
             
-            <div className="hero-cta-wrap flex gap-4 flex-wrap justify-center">
+            <div className="hero-cta-wrap flex gap-4 flex-wrap justify-center lg:justify-start">
               <a href="#precos" className="btn-magic pg-btn">
                 Experimentar a Mágica Agora
                 <span className="arr"><ArrowRight className="w-4 h-4 text-white" /></span>
               </a>
             </div>
             
-            <p className="text-xs text-cream/40 mt-4.5 flex items-center gap-1.5 justify-center">
+            <p className="text-xs text-cream/40 mt-4.5 flex items-center gap-1.5 justify-center lg:justify-start">
               <Timer className="w-3.5 h-3.5 text-mist" /> Sem taxas ocultas · Carrosséis ilimitados usando sua própria API Key
             </p>
+          </div>
+
+          {/* YouTube Video Tutorial Embed (Right Column) */}
+          <div className="lg:col-span-5 w-full flex justify-center items-center reveal reveal-slide-up delay-200 relative z-10">
+            <div className="relative w-full group">
+              {/* Premium neon ambient glow behind the video card */}
+              <div className="absolute -inset-1.5 bg-gradient-to-r from-violet-600 to-indigo-600 rounded-2xl blur opacity-30 group-hover:opacity-50 transition duration-1000 group-hover:duration-200"></div>
+              
+              {/* 16:9 Aspect Ratio responsive iframe wrapper */}
+              <div className="relative w-full aspect-video rounded-2xl overflow-hidden border border-white/10 shadow-2xl bg-black/60 backdrop-blur-md">
+                <iframe
+                  className="absolute top-0 left-0 w-full h-full"
+                  src="https://www.youtube.com/embed/vI2TSRQY-NM"
+                  title="COMO USAR A SLIDOZ PARA GERAR CARROSSÉIS AUTOMÁTICOS EM 60s"
+                  frameBorder="0"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  referrerPolicy="strict-origin-when-cross-origin"
+                  allowFullScreen
+                ></iframe>
+              </div>
+            </div>
           </div>
 
         </div>
