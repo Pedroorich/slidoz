@@ -24,6 +24,29 @@ declare global {
   }
 }
 
+const urlToBase64 = async (url: string): Promise<string> => {
+  if (!url) return '';
+  if (url.startsWith('data:') || url.startsWith('blob:')) return url;
+  
+  // Use wsrv.nl proxy to bypass CORS
+  const proxiedUrl = url.includes('wsrv.nl') ? url : `https://wsrv.nl/?url=${encodeURIComponent(url)}`;
+  
+  try {
+    const res = await fetch(proxiedUrl);
+    if (!res.ok) throw new Error(`Status ${res.status}`);
+    const blob = await res.blob();
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch (err) {
+    console.error(`Erro ao converter imagem para base64: ${url}`, err);
+    return url; // fallback to original URL
+  }
+};
+
 export default function GeneratorPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -442,15 +465,44 @@ export default function GeneratorPage() {
   const handleExport = async () => {
     if (!slides.length || !previewRef.current) return;
     setIsExporting(true);
+    
+    // Salva o estado original antes da conversão temporária para base64
+    const originalSlides = [...slides];
+    const originalLogo = logoUrl;
+
     try {
-      // 1. Espera as fontes do navegador estarem 100% carregadas e prontas
+      // 1. Converter todas as imagens remotas dos slides e logo para base64
+      // Isso imuniza a renderização de canvas de restrições CORS no SVG.
+      const slidesWithBase64 = await Promise.all(slides.map(async (slide) => {
+        const updated = { ...slide };
+        if (slide.backgroundImage && !slide.backgroundImage.startsWith('data:') && !slide.backgroundImage.startsWith('blob:')) {
+          updated.backgroundImage = await urlToBase64(slide.backgroundImage);
+        }
+        if (slide.imageUrl && !slide.imageUrl.startsWith('data:') && !slide.imageUrl.startsWith('blob:')) {
+          updated.imageUrl = await urlToBase64(slide.imageUrl);
+        }
+        return updated;
+      }));
+
+      let exportedLogoUrl = logoUrl;
+      if (logoUrl && !logoUrl.startsWith('data:') && !logoUrl.startsWith('blob:')) {
+        exportedLogoUrl = await urlToBase64(logoUrl);
+      }
+
+      setSlides(slidesWithBase64);
+      setLogoUrl(exportedLogoUrl);
+
+      // Pequena pausa para garantir que o React renderizou o DOM com as novas URLs base64
+      await new Promise(r => setTimeout(r, 600));
+
+      // 2. Espera as fontes do navegador estarem 100% carregadas e prontas
       try {
         await document.fonts.ready;
       } catch (fontReadyError) {
         console.warn("Aviso ao aguardar document.fonts.ready:", fontReadyError);
       }
 
-      // 2. Coleta apenas as fontes que estão sendo realmente utilizadas no carrossel atual
+      // 3. Coleta apenas as fontes que estão sendo realmente utilizadas no carrossel atual
       const selectedFonts = FONT_PAIRINGS[fontPairingIndex];
       const usedFonts = new Set<string>();
       if (selectedFonts.heading) usedFonts.add(selectedFonts.heading);
@@ -484,51 +536,57 @@ export default function GeneratorPage() {
         fontList.push('DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400;1,500;1,600');
       }
 
-      // 3. Busca o CSS destas fontes diretamente do Google Fonts e converte os arquivos woff2 para base64.
-      // Isso torna o SVG 100% autossuficiente e imune a bloqueios de CORS e políticas do navegador no canvas.
+      // 4. Busca o CSS destas fontes diretamente do Google Fonts de forma individual e converte para base64.
+      // A busca individual impede que a falha em obter uma fonte quebre o lote inteiro das demais fontes.
       let base64FontCSS = '';
       if (fontList.length > 0) {
-        const fontCSSUrl = `https://fonts.googleapis.com/css2?family=${fontList.join('&family=')}&display=swap`;
-        try {
-          const fontRes = await fetch(fontCSSUrl);
-          if (fontRes.ok) {
-            let cssText = await fontRes.text();
-            
-            // Regex robusta para encontrar as URLs binárias (.woff2)
-            const urlRegex = /url\(['"]?(https:\/\/fonts\.gstatic\.com\/[^'"\)]+)['"]?\)/g;
-            const matches = [...cssText.matchAll(urlRegex)];
-            const fontUrlToBase64 = new Map<string, string>();
+        const fontUrlToBase64 = new Map<string, string>();
+        const cssTexts: string[] = [];
 
-            // Busca e converte cada arquivo woff2 para base64 em paralelo
-            await Promise.all(matches.map(async (match) => {
-              const fontFileUrl = match[1];
-              if (fontUrlToBase64.has(fontFileUrl)) return;
-              try {
-                const fontFileRes = await fetch(fontFileUrl);
-                if (fontFileRes.ok) {
-                  const blob = await fontFileRes.blob();
-                  const base64Data = await new Promise<string>((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => resolve(reader.result as string);
-                    reader.onerror = reject;
-                    reader.readAsDataURL(blob);
-                  });
-                  fontUrlToBase64.set(fontFileUrl, base64Data);
+        await Promise.all(fontList.map(async (fontParam) => {
+          const fontCSSUrl = `https://fonts.googleapis.com/css2?family=${fontParam}&display=swap`;
+          try {
+            const fontRes = await fetch(fontCSSUrl);
+            if (fontRes.ok) {
+              let cssText = await fontRes.text();
+              
+              // Regex robusta para encontrar as URLs binárias (.woff2)
+              const urlRegex = /url\(['"]?(https:\/\/fonts\.gstatic\.com\/[^'"\)]+)['"]?\)/g;
+              const matches = [...cssText.matchAll(urlRegex)];
+
+              // Busca e converte cada arquivo woff2 para base64 em paralelo
+              await Promise.all(matches.map(async (match) => {
+                const fontFileUrl = match[1];
+                if (fontUrlToBase64.has(fontFileUrl)) return;
+                try {
+                  const fontFileRes = await fetch(fontFileUrl);
+                  if (fontFileRes.ok) {
+                    const blob = await fontFileRes.blob();
+                    const base64Data = await new Promise<string>((resolve, reject) => {
+                      const reader = new FileReader();
+                      reader.onloadend = () => resolve(reader.result as string);
+                      reader.onerror = reject;
+                      reader.readAsDataURL(blob);
+                    });
+                    fontUrlToBase64.set(fontFileUrl, base64Data);
+                  }
+                } catch (err) {
+                  console.error(`Erro ao inlinar arquivo de fonte ${fontFileUrl}:`, err);
                 }
-              } catch (err) {
-                console.error(`Erro ao inlinar arquivo de fonte ${fontFileUrl}:`, err);
-              }
-            }));
+              }));
 
-            // Substitui todas as URLs pelos dados base64 correspondentes no CSS
-            for (const [fontFileUrl, base64Data] of fontUrlToBase64.entries()) {
-              cssText = cssText.replaceAll(fontFileUrl, base64Data);
+              cssTexts.push(cssText);
             }
-            base64FontCSS = cssText;
+          } catch (fontFetchError) {
+            console.error(`Erro ao obter e processar fonte (${fontParam}):`, fontFetchError);
           }
-        } catch (fontFetchError) {
-          console.error("Erro ao obter e processar fontes em base64:", fontFetchError);
+        }));
+
+        let combinedCSS = cssTexts.join('\n');
+        for (const [fontFileUrl, base64Data] of fontUrlToBase64.entries()) {
+          combinedCSS = combinedCSS.replaceAll(fontFileUrl, base64Data);
         }
+        base64FontCSS = combinedCSS;
       }
 
       const slideElements = document.querySelectorAll('.slide-container');
@@ -609,6 +667,9 @@ export default function GeneratorPage() {
       console.error(error);
       alert(`Falha ao exportar os slides:\n\n${error.message || 'Erro desconhecido'}`);
     } finally {
+      // Restaura o estado original dos slides e da logo
+      setSlides(originalSlides);
+      setLogoUrl(originalLogo);
       setIsExporting(false);
     }
   };
