@@ -15,6 +15,10 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading, isSubscriptionActive, isAdmin, profile } = useAuth();
   const location = useLocation();
   
+  if (import.meta.env.DEV) {
+    return <>{children}</>;
+  }
+  
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0A0A0A] flex items-center justify-center">
@@ -49,6 +53,10 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   const { user, loading, isAdmin } = useAuth();
   const location = useLocation();
 
+  if (import.meta.env.DEV) {
+    return <>{children}</>;
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0A0A0A] flex items-center justify-center">
@@ -68,6 +76,10 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
 function AuthenticatedOnlyRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const location = useLocation();
+
+  if (import.meta.env.DEV) {
+    return <>{children}</>;
+  }
 
   if (loading) {
     return (

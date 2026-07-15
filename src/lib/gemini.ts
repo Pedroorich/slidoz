@@ -20,6 +20,7 @@ export interface CustomLayer {
 export interface SlideData {
   id: string;
   type: 'hero' | 'problem' | 'solution' | 'features' | 'details' | 'how-to' | 'cta' | 'quote' | 'testimonial';
+  layoutModel?: 'default' | 'forbes' | 'twitter' | 'frases' | 'ranking' | 'antes_depois' | 'dado_contexto' | 'checklist' | 'depoimento' | 'passo_a_passo' | 'comparativo' | 'citacao_especialista' | 'problema' | 'solucao' | 'timeline';
   background: 'light' | 'dark' | 'brand-gradient';
   backgroundImage?: string;
   imageDescription?: string;
@@ -28,7 +29,7 @@ export interface SlideData {
   tag?: string;
   title: string;
   content?: string;
-  items?: { icon?: string; label: string; description?: string }[];
+  items?: { icon?: string; label: string; description?: string; date?: string }[];
   quote?: { label: string; text: string };
   ctaText?: string;
   alignment: 'left' | 'center' | 'right';
@@ -52,6 +53,36 @@ export interface SlideData {
   bgGradientPosition?: 'top' | 'bottom';
   extendBackgroundToNext?: boolean;
   customLayers?: CustomLayer[];
+  antesTitle?: string;
+  antesContent?: string;
+  depoisTitle?: string;
+  depoisContent?: string;
+  bigNumber?: string;
+  contextLine?: string;
+  implicationLine?: string;
+  sourceLine?: string;
+  checklistType?: 'positive' | 'negative';
+  testimonialName?: string;
+  testimonialRole?: string;
+  testimonialPhoto?: string;
+  comparisonOptionA?: string;
+  comparisonOptionB?: string;
+  comparisonWinner?: 'none' | 'A' | 'B';
+  comparisonVerdict?: string;
+  comparisonRows?: { label: string; valueA: 'yes' | 'no' | 'maybe'; valueB: 'yes' | 'no' | 'maybe' }[];
+  comparisonImageA?: string;
+  comparisonImageB?: string;
+  expertName?: string;
+  expertRole?: string;
+  expertPhoto?: string;
+  textOffsetX?: number;
+  textOffsetY?: number;
+  isClientPhoto?: boolean;
+  bgImageScale?: number;
+  twitterImages?: string[];
+  twitterImageBorderRadius?: number;
+  twitterImageHeight?: number;
+  forbesQuoteColor?: string;
 }
 
 export async function generateImage(
@@ -189,7 +220,8 @@ export async function generateImage(
 }
 
 export async function analyzeCreativeReference(
-  referenceImage: { data: string, mimeType: string }
+  referenceImage: { data: string, mimeType: string },
+  generationLayout?: string
 ): Promise<string> {
   try {
     const customKey = localStorage.getItem('custom_gemini_key');
@@ -257,7 +289,7 @@ export async function analyzeCreativeReference(
     ];
 
     const response = await currentAi.models.generateContent({
-      model: 'gemini-3.5-flash',
+      model: 'gemini-2.5-flash',
       contents: { parts },
       config: { maxOutputTokens: 250 }
     });
@@ -269,6 +301,131 @@ export async function analyzeCreativeReference(
   }
 }
 
+export async function analyzePhotoQuietZone(
+  photo: { data: string, mimeType: string }
+): Promise<{
+  alignment: 'left' | 'center' | 'right';
+  verticalAlignment: 'top' | 'center' | 'bottom';
+  textOffsetX: number;
+  textOffsetY: number;
+  bgGradientOpacity: number;
+}> {
+  try {
+    const customKey = localStorage.getItem('custom_gemini_key');
+    const customOpenRouterKey = localStorage.getItem('custom_openrouter_key');
+    const customProvider = localStorage.getItem('custom_ai_provider') || 'gemini';
+    const customModel = localStorage.getItem('custom_openrouter_model_custom')?.trim() || localStorage.getItem('custom_openrouter_model') || 'google/gemini-2.5-flash';
+    
+    const isOpenRouter = customProvider === 'openrouter' || (customKey && customKey.startsWith('sk-or-')) || (customOpenRouterKey && customOpenRouterKey.startsWith('sk-or-'));
+    const apiKey = isOpenRouter 
+      ? (customOpenRouterKey || customKey || process.env.API_KEY || process.env.GEMINI_API_KEY || "DUMMY_KEY")
+      : (customKey || process.env.API_KEY || process.env.GEMINI_API_KEY || "DUMMY_KEY");
+
+    const promptText = `Analyze this image and identify the best position to place overlay text so that it does not overlap with the main subject (e.g., a person, their face, or a main object). The text should be placed in a 'quiet zone' of the image (negative space or clean background).
+Return a JSON object with:
+- alignment: 'left' | 'center' | 'right'
+- verticalAlignment: 'top' | 'center' | 'bottom'
+- textOffsetX: number (default 0, range -50 to 50)
+- textOffsetY: number (default 0, range -50 to 50)
+- bgGradientOpacity: number (between 0.1 and 0.6; use higher values if the background in the text area is busy/bright to ensure readability)`;
+
+    if (isOpenRouter) {
+      console.log(`Analyzing photo quiet zone with OpenRouter using: ${customModel}`);
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: customModel,
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: promptText },
+                {
+                  type: "image_url",
+                  image_url: {
+                    url: `data:${photo.mimeType};base64,${photo.data}`
+                  }
+                }
+              ]
+            }
+          ],
+          response_format: { type: "json_object" },
+          max_tokens: 250
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`OpenRouter quiet zone status: ${response.status}`);
+      }
+
+      const resJson = await response.json();
+      const content = resJson.choices?.[0]?.message?.content || "";
+      const parsed = JSON.parse(content.trim());
+      return {
+        alignment: parsed.alignment || 'center',
+        verticalAlignment: parsed.verticalAlignment || 'bottom',
+        textOffsetX: typeof parsed.textOffsetX === 'number' ? parsed.textOffsetX : 0,
+        textOffsetY: typeof parsed.textOffsetY === 'number' ? parsed.textOffsetY : 0,
+        bgGradientOpacity: typeof parsed.bgGradientOpacity === 'number' ? parsed.bgGradientOpacity : 0.4
+      };
+    }
+
+    const currentAi = new GoogleGenAI({ apiKey });
+    const parts = [
+      {
+        inlineData: {
+          data: photo.data,
+          mimeType: photo.mimeType
+        }
+      },
+      { text: promptText }
+    ];
+
+    const response = await currentAi.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: { parts },
+      config: {
+        maxOutputTokens: 250,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            alignment: { type: Type.STRING, enum: ['left', 'center', 'right'] },
+            verticalAlignment: { type: Type.STRING, enum: ['top', 'center', 'bottom'] },
+            textOffsetX: { type: Type.INTEGER },
+            textOffsetY: { type: Type.INTEGER },
+            bgGradientOpacity: { type: Type.NUMBER }
+          },
+          required: ['alignment', 'verticalAlignment', 'textOffsetX', 'textOffsetY', 'bgGradientOpacity']
+        }
+      }
+    });
+
+    const parsed = JSON.parse(response.text?.trim() || "{}");
+    return {
+      alignment: parsed.alignment || 'center',
+      verticalAlignment: parsed.verticalAlignment || 'bottom',
+      textOffsetX: typeof parsed.textOffsetX === 'number' ? parsed.textOffsetX : 0,
+      textOffsetY: typeof parsed.textOffsetY === 'number' ? parsed.textOffsetY : 0,
+      bgGradientOpacity: typeof parsed.bgGradientOpacity === 'number' ? parsed.bgGradientOpacity : 0.4
+    };
+  } catch (error) {
+    console.error("Erro ao analisar quiet zone da foto:", error);
+    // Fallbacks padrão seguros
+    return {
+      alignment: 'center',
+      verticalAlignment: 'bottom',
+      textOffsetX: 0,
+      textOffsetY: 0,
+      bgGradientOpacity: 0.4
+    };
+  }
+}
+
 export function buildCinematicImagePrompt(
   baseDescription: string,
   slideType: string,
@@ -276,7 +433,10 @@ export function buildCinematicImagePrompt(
   topic: string,
   tone: string,
   hasAvatar: boolean,
-  creativeStylePrompt?: string
+  creativeStylePrompt?: string,
+  layoutModel?: string,
+  title?: string,
+  content?: string
 ): string {
 
   // Variações de pose e expressão para o avatar — nunca repete a mesma
@@ -356,6 +516,11 @@ export function buildCinematicImagePrompt(
     ? `\nCREATIVE DIRECTION (MANDATORY): ${creativeStylePrompt}`
     : `\nMOOD AND TONE: Emotionally resonant with the theme "${topic}" using tone "${tone}".`;
 
+  const isFrasesLayout = layoutModel === 'frases';
+  const phrasesAddon = isFrasesLayout
+    ? `\n- Background usage: The image will serve as the backdrop for a clean text quote. Ensure there is a quiet zone, with a low level of detail and low brightness (or high contrast areas) in the lower half or center, to allow readable white overlay text.`
+    : "";
+
   return `
 [FINAL_MODE]
 Masterpiece, award-winning 8K editorial photography.
@@ -364,7 +529,7 @@ SCENE CONCEPT & DETAILS: ${baseDescription}
 TECHNICAL GUIDANCE (Use these to enhance the scene, but do not override the core concept above):
 - Shot & Camera: ${config.shot}, ${config.camera}.
 - Lighting & Mood: ${config.lighting}. ${config.mood}.
-- Default Composition: ${config.composition}. ${customStyleInstruction}
+- Default Composition: ${config.composition}. ${customStyleInstruction}${phrasesAddon}
 ${avatarInstruction}
 
 CRITICAL RULES: 
@@ -402,148 +567,202 @@ export function generateLocalCarouselFallback(
     // 0: Hero
     (subj: string, brand: string) => ({
       type: 'hero' as const,
+      layoutModel: 'default' as const,
       background: 'brand-gradient' as const,
       tag: 'GUIA PRÁTICO',
       title: `Como Dominar:<br><span class="text-white font-extrabold">${subj}</span>`,
       content: 'Descubra a metodologia simples e eficiente para alcançar seus objetivos sem perder tempo.',
       alignment: 'center' as const
     }),
-    // 1: Problem
+    // 1: Módulo 12 - Problema
     (subj: string, brand: string) => ({
       type: 'problem' as const,
+      layoutModel: 'problema' as const,
       background: 'dark' as const,
-      tag: 'ERROS COMUNS',
-      title: 'Por que a maioria falha no início?',
-      content: `Tentar dominar <strong>${subj}</strong> sem um método estruturado é o caminho mais rápido para a frustração. A falta de foco e consistência faz 90% das pessoas desistirem.`,
-      alignment: 'left' as const
+      tag: 'O PROBLEMA',
+      title: `O grande erro ao tentar dominar ${subj}`,
+      content: `A maioria das pessoas tenta aprender sem um método estruturado, levando a frustração extrema e desistência precoce.`,
+      alignment: 'center' as const
     }),
-    // 2: Alerta
-    (subj: string, brand: string) => ({
-      type: 'problem' as const,
-      background: 'dark' as const,
-      tag: 'ATENÇÃO',
-      title: 'O perigo de procrastinar',
-      content: `Adiar o início de <strong>${subj}</strong> é o maior sabotador do seu crescimento. Cada dia de espera é uma oportunidade perdida para evoluir e se destacar.`,
-      alignment: 'left' as const
-    }),
-    // 3: Solution
+    // 2: Módulo 12 - Solução
     (subj: string, brand: string) => ({
       type: 'solution' as const,
-      background: 'light' as const,
+      layoutModel: 'solucao' as const,
+      background: 'brand-gradient' as const,
       tag: 'A SOLUÇÃO',
-      title: 'O Segredo Está na Metodologia',
-      content: `A solução ideal para <strong>${subj}</strong> exige consistência diária e processos claros. Dividir a jornada em pequenas etapas torna o progresso inevitável.`,
-      quote: { label: 'Foco no Processo', text: 'A consistência supera a intensidade. Pequenos passos geram grandes resultados.' },
-      alignment: 'left' as const
+      title: `A chave para a consistência real`,
+      content: `Dividir o aprendizado de ${subj} em blocos práticos diários garante evolução constante e resultados sólidos.`,
+      alignment: 'center' as const
     }),
-    // 4: 3 Pillars (Features)
+    // 3: Módulo 4 - Ranking / Top N
     (subj: string, brand: string) => ({
       type: 'features' as const,
-      background: 'light' as const,
-      tag: 'PILARES',
-      title: '3 Pilares Indispensáveis',
-      content: 'Para ter sucesso, foque na execução destes três fundamentos essenciais:',
+      layoutModel: 'ranking' as const,
+      background: 'dark' as const,
+      tag: 'RANKING',
+      title: 'Top 3 Pilares do Sucesso',
+      content: 'Estes são os aspectos mais determinantes para evoluir rápido:',
       items: [
-        { icon: '🎯', label: 'Clareza', description: 'Tenha metas bem definidas e mensuráveis.' },
-        { icon: '⚡', label: 'Ação', description: 'Pratique todos os dias, mesmo que por poucos minutos.' },
-        { icon: '📈', label: 'Ajuste', description: 'Analise seus resultados e corrija a rota constantemente.' }
+        { label: 'Consistência Diária', description: 'Praticar 15 minutos por dia supera maratonas de fim de semana.' },
+        { label: 'Feedback Ativo', description: 'Corrija seus erros rapidamente com revisões frequentes.' },
+        { label: 'Aplicação Prática', description: 'Teoria sem prática não constrói habilidades duradouras.' }
       ],
       alignment: 'left' as const
     }),
-    // 5: Step 1 Details
+    // 4: Módulo 5 - Antes vs Depois
     (subj: string, brand: string) => ({
       type: 'details' as const,
+      layoutModel: 'antes_depois' as const,
       background: 'dark' as const,
-      tag: 'PASSO 1',
-      title: 'Fase 1: Planejamento',
-      content: 'Antes de começar a executar, defina seu objetivo. Um bom planejamento poupa 80% do esforço desnecessário na hora de colocar a mão na massa.',
+      tag: 'TRANSFORMAÇÃO',
+      title: 'Antes vs Depois do Método',
+      content: 'A evolução nítida que você experimenta ao aplicar nosso processo:',
+      antesTitle: 'Tentativa Caótica',
+      antesContent: 'Sem rumo, perda de tempo e frustração constante por não saber o próximo passo.',
+      depoisTitle: 'Execução Fluida',
+      depoisContent: 'Direção clara, progresso diário previsível e domínio rápido do assunto.',
       alignment: 'left' as const
     }),
-    // 6: Step 2 Details
+    // 5: Módulo 6 - Dado + Contexto
     (subj: string, brand: string) => ({
       type: 'details' as const,
+      layoutModel: 'dado_contexto' as const,
       background: 'dark' as const,
-      tag: 'PASSO 2',
-      title: 'Fase 2: Execução',
-      content: 'A perfeição é inimiga da ação. Foque em começar e manter a regularidade. É através da prática que a verdadeira habilidade se desenvolve.',
+      tag: 'DADO REAL',
+      title: 'A Importância da Prática',
+      content: 'A ciência comprova a eficácia da aplicação imediata.',
+      bigNumber: '85%',
+      contextLine: 'Aumento na taxa de retenção de conhecimento.',
+      implicationLine: 'A prática ativa fixa o conhecimento profundamente e evita a curva do esquecimento acelerada.',
+      sourceLine: 'Fonte: SlidOZ Labs Academic Research',
       alignment: 'left' as const
     }),
-    // 7: Step 3 Details
-    (subj: string, brand: string) => ({
-      type: 'details' as const,
-      background: 'dark' as const,
-      tag: 'PASSO 3',
-      title: 'Fase 3: Otimização',
-      content: 'Aprenda com seus erros e acertos. Otimizar seu processo em 1% todos os dias gera um impacto gigantesco ao longo do ano.',
-      alignment: 'left' as const
-    }),
-    // 8: Hack
-    (subj: string, brand: string) => ({
-      type: 'details' as const,
-      background: 'light' as const,
-      tag: 'SEGREDO',
-      title: 'O hack da consistência',
-      content: 'Não dependa de motivação. Crie um ambiente favorável que force você a agir. A disciplina vence a motivação em 100% das vezes.',
-      alignment: 'left' as const
-    }),
-    // 9: Mito ou Verdade
-    (subj: string, brand: string) => ({
-      type: 'details' as const,
-      background: 'light' as const,
-      tag: 'MITO OU VERDADE',
-      title: 'Precisa de talento natural?',
-      content: `<strong>Mito!</strong> Ninguém nasce sabendo <strong>${subj}</strong>. O sucesso é fruto de técnica, repetição e persistência. A prática supera qualquer talento.`,
-      alignment: 'left' as const
-    }),
-    // 10: How-to
-    (subj: string, brand: string) => ({
-      type: 'how-to' as const,
-      background: 'light' as const,
-      tag: 'PASSO A PASSO',
-      title: 'Plano de Ação Prático',
-      content: 'Comece a aplicar esse método hoje mesmo seguindo estas etapas simples:',
-      items: [
-        { label: '1. Organize', description: 'Dedique 15 minutos para planejar seu dia.' },
-        { label: '2. Comece', description: 'Inicie pela tarefa mais importante.' },
-        { label: '3. Revise', description: 'Veja o que funcionou e o que pode melhorar.' }
-      ],
-      alignment: 'left' as const
-    }),
-    // 11: Checklist
+    // 6: Módulo 7 - Checklist (Positive)
     (subj: string, brand: string) => ({
       type: 'features' as const,
+      layoutModel: 'checklist' as const,
+      checklistType: 'positive' as const,
       background: 'light' as const,
-      tag: 'CHECKLIST',
-      title: 'Checklist de Sucesso',
-      content: `Garanta que você possui tudo o que precisa para progredir em <strong>${subj}</strong>:`,
+      tag: 'FAÇA ISSO',
+      title: 'Checklist para o Sucesso',
+      content: 'Certifique-se de seguir estes passos indispensáveis:',
       items: [
-        { icon: '✓', label: 'Meta clara definida por escrito' },
-        { icon: '✓', label: 'Agenda reservada para execução diária' },
-        { icon: '✓', label: 'Ambiente livre de distrações' }
+        { icon: '✓', label: 'Reserve um horário fixo no seu dia' },
+        { icon: '✓', label: 'Elimine notificações e distrações' },
+        { icon: '✓', label: 'Registre seu progresso semanalmente' }
       ],
       alignment: 'left' as const
     }),
-    // 12: Inspiração
+    // 7: Módulo 7 - Checklist (Negative)
     (subj: string, brand: string) => ({
-      type: 'details' as const,
-      background: 'dark' as const,
-      tag: 'INSPIRAÇÃO',
-      title: 'O impacto a longo prazo',
-      content: 'Imagine onde você estará daqui a um ano se começar a praticar hoje. O tempo vai passar de qualquer forma; a escolha de como usá-lo é sua.',
+      type: 'features' as const,
+      layoutModel: 'checklist' as const,
+      checklistType: 'negative' as const,
+      background: 'light' as const,
+      tag: 'EVITE ISSO',
+      title: 'Erros Críticos que Bloqueiam Você',
+      content: 'Pare imediatamente de sabotar seu aprendizado:',
+      items: [
+        { icon: '✕', label: 'Consumir conteúdo passivamente sem praticar' },
+        { icon: '✕', label: 'Mudar de método toda semana sem consistência' },
+        { icon: '✕', label: 'Esperar o momento perfeito para começar' }
+      ],
       alignment: 'left' as const
     }),
-    // 13: Mindset
+    // 8: Módulo 8 - Depoimento
     (subj: string, brand: string) => ({
-      type: 'details' as const,
-      background: 'dark' as const,
-      tag: 'MINDSET',
-      title: 'A Mentalidade Correta',
-      content: 'O sucesso não acontece por acaso. Ele é o resultado direto de hábitos diários construídos com foco e propósito. Não pare até se orgulhar do seu progresso.',
+      type: 'testimonial' as const,
+      layoutModel: 'depoimento' as const,
+      background: 'light' as const,
+      tag: 'FEEDBACK',
+      title: 'Resultados Comprovados',
+      content: `O método simplificou completamente a forma como eu encaro ${subj}. Em poucas semanas alcancei resultados que não via há meses.`,
+      testimonialName: 'Mariana Costa',
+      testimonialRole: 'Product Designer',
+      testimonialPhoto: '',
       alignment: 'left' as const
     }),
-    // 14: CTA
+    // 9: Módulo 9 - Passo a Passo (1)
+    (subj: string, brand: string) => ({
+      type: 'details' as const,
+      layoutModel: 'passo_a_passo' as const,
+      background: 'dark' as const,
+      tag: 'TUTORIAL',
+      title: 'Fase 1: Preparação Básica',
+      content: 'Antes de qualquer execução, prepare suas ferramentas e defina seu objetivo central claro de estudo.',
+      alignment: 'left' as const
+    }),
+    // 10: Módulo 9 - Passo a Passo (2)
+    (subj: string, brand: string) => ({
+      type: 'details' as const,
+      layoutModel: 'passo_a_passo' as const,
+      background: 'dark' as const,
+      tag: 'TUTORIAL',
+      title: 'Fase 2: Execução Guiada',
+      content: 'Coloque a mão na massa com foco em pequenas tarefas completáveis de até 25 minutos diários.',
+      alignment: 'left' as const
+    }),
+    // 11: Módulo 9 - Passo a Passo (3)
+    (subj: string, brand: string) => ({
+      type: 'details' as const,
+      layoutModel: 'passo_a_passo' as const,
+      background: 'dark' as const,
+      tag: 'TUTORIAL',
+      title: 'Fase 3: Análise e Ajuste',
+      content: 'Compare seu progresso com referências e faça os ajustes necessários para o próximo ciclo.',
+      alignment: 'left' as const
+    }),
+    // 12: Módulo 10 - Comparativo de Opções
+    (subj: string, brand: string) => ({
+      type: 'details' as const,
+      layoutModel: 'comparativo' as const,
+      background: 'dark' as const,
+      tag: 'ESTRATÉGIA',
+      title: 'Teoria vs Prática Ativa',
+      content: 'Qual a melhor abordagem para o seu aprendizado?',
+      comparisonOptionA: 'Consumo Passivo',
+      comparisonOptionB: 'Prática Direta',
+      comparisonWinner: 'B' as const,
+      comparisonVerdict: 'A Prática Direta acelera o aprendizado em 5x',
+      comparisonRows: [
+        { label: 'Retenção', valueA: 'no' as const, valueB: 'yes' as const },
+        { label: 'Frustração', valueA: 'yes' as const, valueB: 'maybe' as const },
+        { label: 'Velocidade', valueA: 'no' as const, valueB: 'yes' as const }
+      ],
+      alignment: 'left' as const
+    }),
+    // 13: Módulo 11 - Citação de Especialista
+    (subj: string, brand: string) => ({
+      type: 'quote' as const,
+      layoutModel: 'citacao_especialista' as const,
+      background: 'dark' as const,
+      tag: 'Especialista',
+      title: 'A Ciência da Aprendizagem',
+      content: `A excelência não é um ato isolado, mas sim o reflexo direto de micro-hábitos que executamos diariamente com consistência e foco deliberado.`,
+      expertName: 'Dr. Thiago Medeiros',
+      expertRole: 'Neurocientista e Autor',
+      expertPhoto: '',
+      alignment: 'left' as const
+    }),
+    // 14: Módulo 13 - Timeline
+    (subj: string, brand: string) => ({
+      type: 'details' as const,
+      layoutModel: 'timeline' as const,
+      background: 'dark' as const,
+      tag: 'JORNADA',
+      title: 'Cronograma da Evolução',
+      content: 'O que esperar ao longo das primeiras semanas de aplicação:',
+      items: [
+        { date: 'Semana 1', label: 'Primeiros Passos', description: 'Entenda os fundamentos teóricos essenciais.' },
+        { date: 'Semana 2', label: 'Fase de Prática', description: 'Comece a construir projetos simples.' },
+        { date: 'Semana 4', label: 'Autonomia Real', description: 'Crie soluções complexas sem ajuda constante.' }
+      ],
+      alignment: 'left' as const
+    }),
+    // 15: CTA
     (subj: string, brand: string) => ({
       type: 'cta' as const,
+      layoutModel: 'default' as const,
       background: 'brand-gradient' as const,
       tag: 'DICA DE OURO',
       title: 'Quer aprender mais sobre isso?',
@@ -553,7 +772,7 @@ export function generateLocalCarouselFallback(
     })
   ];
 
-  const middleTemplates = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
+  const middleTemplates = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
   const slides: SlideData[] = [];
 
   // Add Hero
@@ -565,7 +784,7 @@ export function generateLocalCarouselFallback(
 
   if (numSlides === 2) {
     slides.push({
-      ...templates[14](subject, brandName),
+      ...templates[15](subject, brandName),
       id: Math.random().toString(36).substring(7)
     });
   } else if (numSlides > 2) {
@@ -587,7 +806,7 @@ export function generateLocalCarouselFallback(
 
     // Add CTA
     slides.push({
-      ...templates[14](subject, brandName),
+      ...templates[15](subject, brandName),
       id: Math.random().toString(36).substring(7)
     });
   }
@@ -614,9 +833,12 @@ export async function generateCarouselContent(
   brandName: string,
   includeImages: boolean,
   hasReferenceImage: boolean = false,
-  isSeamless: boolean = false
+  isSeamless: boolean = false,
+  generationLayout?: string,
+  phraseCategory?: string,
+  customPhrases?: string
 ): Promise<SlideData[]> {
-  const prompt = `
+  let prompt = `
     Crie um carrossel para o Instagram sobre: "${topic}".
     Tom de voz: ${tone}.
     Nome da Marca: ${brandName}.
@@ -638,21 +860,84 @@ export async function generateCarouselContent(
     6. How-to (Passo a passo)
     7. CTA (Chamada para ação)
     
+    CRÍTICO - DIRETRIZ DE LAYOUT DE SLIDES (layoutModel):
+    Escolha de forma inteligente o layout mais adequado para a mensagem de cada slide. Atribua o respectivo 'layoutModel' no JSON:
+    
+    - 'ranking': Ative quando o slide contiver uma lista numerada ou o "Top N" de itens/pilares. Preencha o array "items".
+    - 'antes_depois': Ative quando for contrastar ou comparar um estado anterior (dor/problema) com o posterior (sucesso/solução). Preencha: "antesTitle" (ex: "Antes"), "antesContent", "depoisTitle" (ex: "Depois"), "depoisContent".
+    - 'dado_contexto': Ative quando o slide destacar uma estatística importante, porcentagem ou grande número. Preencha: "bigNumber" (ex: "85%"), "contextLine" (o que significa), "implicationLine" (a consequência/porquê importa), e opcionalmente "sourceLine" (a fonte).
+    - 'checklist': Ative para checklists de faça/não faça. Defina "checklistType" como "positive" (para dicas/recomendações ✓) ou "negative" (para erros/evitar ✕). Adicione os itens no array "items".
+    - 'depoimento': Ative para depoimentos de clientes ou citações pessoais informais. Preencha: "testimonialName", "testimonialRole", e "testimonialPhoto" (opcional).
+    - 'passo_a_passo': Ative para slides de tutoriais, guias passo a passo ou processos sequenciais.
+    - 'comparativo': Ative para comparar lado a lado duas opções (Opção A vs Opção B). Preencha: "comparisonOptionA", "comparisonOptionB", "comparisonWinner" ('A' | 'B' | 'none'), "comparisonVerdict" (veredito rápido), e o array "comparisonRows" contendo objetos com { label: "Critério", valueA: "yes"|"no"|"maybe", valueB: "yes"|"no"|"maybe" }.
+    - 'citacao_especialista': Ative para pensamentos de autoridade ou citações formais. Preencha: "expertName", "expertRole" (cargo/credencial), "expertPhoto" (opcional).
+    - 'problema': Ative para o slide de dor/problema inicial do carrossel.
+    - 'solucao': Ative para o slide de solução que resolve a dor do slide de 'problema'.
+    - 'timeline': Ative para linhas do tempo ou etapas cronológicas. Preencha o array "items" onde cada item pode ter "date", "label", "description".
+    - 'default': Use para slides simples que não se encaixam em nenhuma das categorias acima (ex: hero, cta ou slides de texto comuns).
+    
     Retorne um array JSON de slides. Cada slide deve ter:
     - type: 'hero', 'problem', 'solution', 'features', 'details', 'how-to', ou 'cta'
+    - layoutModel: o modelo de layout escolhido (conforme as regras acima)
     - background: 'light', 'dark', ou 'brand-gradient'
-    - tag: Uma categoria corta em maiúsculas. MÁXIMO 2 PALAVRAS.
+    - tag: Uma categoria curta em maiúsculas. MÁXIMO 2 PALAVRAS.
     - title: O título principal do slide.
     - content: Texto de corpo com o conteúdo real e educativo do post.
-    - items: Array de { label, description } para features ou passos (opcional)
+    - items: Array de { label, description, icon, date } para features, checklists, ranking ou passos (opcional)
     - quote: Objeto com { label, text } para slide de solução (opcional)
     - ctaText: Texto para o botão no slide de CTA (opcional)
     - alignment: 'left', 'center', ou 'right' (padrão 'left', 'center' para hero/cta)
-    ${includeImages && !hasReferenceImage ? `- imageDescription: OBRIGATÓRIO (em inglês). Crie um prompt de IA DETALHADO, EXTREMAMENTE CRIATIVO E METAFÓRICO para este slide. Entenda profundamente o conteúdo do slide em relação ao tema todo e proponha uma imagem que prenda a atenção e expresse a mensagem principal. Use cenas cinematográficas, ângulos interessantes e descrições ricas. (ex: "cinematic wide angle, a surreal floating clock wrapped in glowing neon threads representing time management, deep purple and cyan cyberpunk lighting, ultra detailed 8k photography, sharp focus").` : ''}
+    ${includeImages && !hasReferenceImage ? `- imageDescription: OBRIGATÓRIO (em inglês). Crie um prompt de IA DETALHADO, EXTREMAMENTE CRIATIVO E METAFÓRICO para este slide. Entenda profundamente o conteúdo do slide em relação ao tema todo e proponha uma imagem que prenda a atenção e expresse a mensagem principal. Use cenas cinematográficas, ângulos interessantes e descrições ricas.` : ''}
     ${includeImages && hasReferenceImage ? `- imageDescription: OBRIGATÓRIO (em inglês). Crie uma descrição CRIATIVA E IMPULSIONADORA para inserir o Avatar do cliente com perfeição neste slide. A cena deve traduzir o conteúdo do slide (MÁXIMO 250 CARACTERES).` : ''}
     ${includeImages ? `- imagePosition: 'top', 'center', 'bottom', ou 'background'.` : ''}
     ${isSeamless ? `- extendBackgroundToNext: BOOLEAN. Set to true for odd-numbered slides (1st, 3rd, 5th...) to create a seamless carousel.` : ''}
+    
+    CRÍTICO: Opcionais como antesTitle/antesContent, bigNumber/contextLine/implicationLine, testimonialName/testimonialRole, expertName/expertRole, comparisonOptionA/OptionB/Verdict e comparisonRows só devem ser preenchidos se o slide usar o respectivo 'layoutModel'. Caso contrário, não os inclua de forma alguma no JSON do slide. Mantenha os valores de todos esses campos curtos (máximo 40 caracteres) e sem qualquer tipo de repetição.
   `;
+
+  if (generationLayout === 'frases') {
+    if (customPhrases && customPhrases.trim()) {
+      prompt = `
+        Crie um carrossel do Instagram com exatamente ${numSlides} slides baseado EXCLUSIVAMENTE nas seguintes frases fornecidas pelo usuário (uma frase por slide):
+        
+        FRASES DO USUÁRIO:
+        ${customPhrases}
+        
+        CRÍTICO:
+        1. Crie exatamente ${numSlides} slides no array JSON.
+        2. Para cada slide, use uma das frases acima (na mesma ordem) como o título do slide (campo \`title\`). Cada frase deve ser usada em exatamente um slide.
+        3. O campo \`layoutModel\` de todos os slides DEVE ser 'frases'.
+        4. O campo \`content\` (parágrafo educativo de apoio) DEVE conter uma reflexão curta e de alto impacto que complemente o significado daquela frase (máximo 120 caracteres). NUNCA deixe o campo \`content\` vazio.
+        5. O campo \`tag\` deve ser uma categoria curta em maiúsculas (máximo 2 palavras).
+        6. O campo \`type\` de cada slide deve seguir o arco narrativo correspondente (ex: 'hero', 'details', 'cta' etc.).
+        7. Não adicione campos opcionais desnecessários no JSON que não correspondam ao modelo 'frases'.
+        8. Todo o conteúdo deve ser em português (pt-BR).
+        ${includeImages && !hasReferenceImage ? `- imageDescription: OBRIGATÓRIO (em inglês). Crie um prompt de IA detalhado e conceitual para gerar a imagem de fundo do slide.` : ''}
+        ${includeImages && hasReferenceImage ? `- imageDescription: OBRIGATÓRIO (em inglês). Crie uma descrição conceitual para inserir o Avatar do cliente com perfeição neste slide.` : ''}
+        ${includeImages ? `- imagePosition: 'background'.` : ''}
+      `;
+    } else {
+      prompt = `
+        Crie um carrossel do Instagram com exatamente ${numSlides} slides contendo frases marcantes e inspiradoras sobre o tema/categoria: "${phraseCategory || topic}".
+        Tom de voz: ${tone}.
+        Nome da Marca: ${brandName}.
+        
+        CRÍTICO:
+        1. Gere exatamente ${numSlides} slides.
+        2. O campo \`layoutModel\` de todos os slides DEVE ser 'frases'.
+        3. O campo \`title\` de cada slide deve ser uma frase curta de alto impacto, idealmente de 6 a 8 palavras.
+        4. O campo \`content\` deve ser uma reflexão ou conselho complementar curto (máximo 120 caracteres). NUNCA deixe o campo \`content\` vazio.
+        5. Todo o conteúdo deve ser em português (pt-BR).
+        ${includeImages && !hasReferenceImage ? `- imageDescription: OBRIGATÓRIO (em inglês). Crie um prompt de IA detalhado e conceitual para gerar a imagem de fundo do slide.` : ''}
+        ${includeImages && hasReferenceImage ? `- imageDescription: OBRIGATÓRIO (em inglês). Crie uma descrição conceitual para inserir o Avatar do cliente com perfeição neste slide.` : ''}
+        ${includeImages ? `- imagePosition: 'background'.` : ''}
+      `;
+    }
+  } else if (generationLayout === 'forbes') {
+    prompt += `\nCRÍTICO: Como você escolheu o layout corporativo/editorial, o \`layoutModel\` de todos ou da maioria dos slides deve ser 'forbes'.`;
+  } else if (generationLayout === 'twitter') {
+    prompt += `\nCRÍTICO: Como você escolheu o layout estilo rede social/tweets, o \`layoutModel\` de todos ou da maioria dos slides deve ser 'twitter'.`;
+  }
 
   try {
     const customKey = localStorage.getItem('custom_gemini_key');
@@ -732,7 +1017,7 @@ export async function generateCarouselContent(
     const currentAi = new GoogleGenAI({ apiKey });
     
     const response = await currentAi.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-2.5-flash",
       contents: prompt,
       config: {
         maxOutputTokens: 8192,
@@ -745,9 +1030,42 @@ export async function generateCarouselContent(
             properties: {
               type: { type: Type.STRING, enum: ['hero', 'problem', 'solution', 'features', 'details', 'how-to', 'cta'] },
               background: { type: Type.STRING, enum: ['light', 'dark', 'brand-gradient'] },
+              layoutModel: { type: Type.STRING, enum: ['default', 'forbes', 'twitter', 'frases', 'ranking', 'antes_depois', 'dado_contexto', 'checklist', 'depoimento', 'passo_a_passo', 'comparativo', 'citacao_especialista', 'problema', 'solucao', 'timeline'] },
               tag: { type: Type.STRING, enum: ['DICAS', 'ALERTA', 'GUIA', 'TUTORIAL', 'NOVIDADE', 'SEGREDO', 'PASSO A PASSO', 'IMPORTANTE', 'ATENÇÃO', 'MITO OU VERDADE', 'CHECKLIST', 'INSPIRAÇÃO', 'CONCEITO', 'ESTRATÉGIA', 'MINDSET', 'BASTIDORES', 'CASE DE SUCESSO', 'ERROS COMUNS', 'FERRAMENTAS', 'TENDÊNCIA'], description: "Escolha uma tag que melhor se adapta ao slide." },
               title: { type: Type.STRING, description: "O título principal do slide. Deve ser o conteúdo real para o usuário." },
               content: { type: Type.STRING, description: "O texto de corpo do slide. DEVE conter o conteúdo educativo ou informativo. NÃO coloque descrições de imagem aqui." },
+              antesTitle: { type: Type.STRING, description: "Título do estado anterior. Preencha APENAS se layoutModel for 'antes_depois'. Máximo 30 caracteres." },
+              antesContent: { type: Type.STRING, description: "Conteúdo do estado anterior. Preencha APENAS se layoutModel for 'antes_depois'. Máximo 100 caracteres." },
+              depoisTitle: { type: Type.STRING, description: "Título do estado depois. Preencha APENAS se layoutModel for 'antes_depois'. Máximo 30 caracteres." },
+              depoisContent: { type: Type.STRING, description: "Conteúdo do estado depois. Preencha APENAS se layoutModel for 'antes_depois'. Máximo 100 caracteres." },
+              bigNumber: { type: Type.STRING, description: "Número/Dado em destaque. Preencha APENAS se layoutModel for 'dado_contexto'. Ex: '85%'." },
+              contextLine: { type: Type.STRING, description: "Contexto do dado. Preencha APENAS se layoutModel for 'dado_contexto'. Máximo 40 caracteres." },
+              implicationLine: { type: Type.STRING, description: "Implicação do dado. Preencha APENAS se layoutModel for 'dado_contexto'. Máximo 80 caracteres." },
+              sourceLine: { type: Type.STRING, description: "Fonte do dado. Preencha APENAS se layoutModel for 'dado_contexto'. Máximo 30 caracteres." },
+              checklistType: { type: Type.STRING, enum: ['positive', 'negative'], description: "Tipo de checklist (positive/negative). Preencha APENAS se layoutModel for 'checklist'." },
+              testimonialName: { type: Type.STRING, description: "Nome do cliente. Preencha APENAS se layoutModel for 'depoimento'. Máximo 30 caracteres." },
+              testimonialRole: { type: Type.STRING, description: "Cargo/Credencial do cliente. Preencha APENAS se layoutModel for 'depoimento'. Máximo 40 caracteres." },
+              testimonialPhoto: { type: Type.STRING, description: "Preencha APENAS se layoutModel for 'depoimento'." },
+              comparisonWinner: { type: Type.STRING, enum: ['none', 'A', 'B'], description: "Lado vencedor da comparação. Preencha APENAS se layoutModel for 'comparativo'." },
+              comparisonOptionA: { type: Type.STRING, description: "Opção A. Preencha APENAS se layoutModel for 'comparativo'. Máximo 20 caracteres." },
+              comparisonOptionB: { type: Type.STRING, description: "Opção B. Preencha APENAS se layoutModel for 'comparativo'. Máximo 20 caracteres." },
+              comparisonVerdict: { type: Type.STRING, description: "Veredito da comparação. Preencha APENAS se layoutModel for 'comparativo'. Máximo 45 caracteres." },
+              comparisonRows: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    label: { type: Type.STRING, description: "Critério de comparação. Máximo 25 caracteres." },
+                    valueA: { type: Type.STRING, enum: ['yes', 'no', 'maybe'] },
+                    valueB: { type: Type.STRING, enum: ['yes', 'no', 'maybe'] }
+                  },
+                  required: ['label', 'valueA', 'valueB']
+                },
+                description: "Linhas de comparação. Preencha APENAS se layoutModel for 'comparativo'."
+              },
+              expertName: { type: Type.STRING, description: "Nome do especialista. Preencha APENAS se layoutModel for 'citacao_especialista'. Máximo 30 caracteres." },
+              expertRole: { type: Type.STRING, description: "Cargo/Credencial do especialista. Preencha APENAS se layoutModel for 'citacao_especialista'. Máximo 40 caracteres." },
+              expertPhoto: { type: Type.STRING, description: "Preencha APENAS se layoutModel for 'citacao_especialista'." },
               imageDescription: { type: Type.STRING, description: "Descrição visual para o gerador de imagens IA. Máximo 150 caracteres. Descreva apenas a cena visual." },
               imagePosition: { type: Type.STRING, enum: ['top', 'center', 'bottom', 'background'] },
               extendBackgroundToNext: { type: Type.BOOLEAN },
@@ -756,20 +1074,24 @@ export async function generateCarouselContent(
                 items: {
                   type: Type.OBJECT,
                   properties: {
-                    label: { type: Type.STRING },
-                    description: { type: Type.STRING },
-                    icon: { type: Type.STRING }
-                  }
-                }
+                    label: { type: Type.STRING, description: "Nome do item ou passo. Máximo 35 caracteres." },
+                    description: { type: Type.STRING, description: "Breve detalhe do item. Máximo 70 caracteres." },
+                    icon: { type: Type.STRING, description: "Emoji ou caractere simples." },
+                    date: { type: Type.STRING, description: "Preencha apenas para timeline. Ex: 'Semana 1'." }
+                  },
+                  required: ['label']
+                },
+                description: "Lista de itens. Preencha APENAS se layoutModel for 'ranking', 'checklist', 'passo_a_passo' ou 'timeline'."
               },
               quote: {
                 type: Type.OBJECT,
                 properties: {
-                  label: { type: Type.STRING },
-                  text: { type: Type.STRING }
-                }
+                  label: { type: Type.STRING, description: "Rótulo superior. Máximo 25 caracteres." },
+                  text: { type: Type.STRING, description: "Conteúdo da citação. Máximo 90 caracteres." }
+                },
+                description: "Citação para destaque (opcional)."
               },
-              ctaText: { type: Type.STRING },
+              ctaText: { type: Type.STRING, description: "Texto do botão. Preencha apenas se type for 'cta'. Máximo 20 caracteres." },
               alignment: { type: Type.STRING, enum: ['left', 'center', 'right'] }
             },
             required: ['type', 'background', 'title', 'content', 'alignment']
@@ -833,6 +1155,10 @@ export async function generateCarouselContent(
       } else {
         slides = [slides];
       }
+    }
+
+    if (slides.length < Math.min(3, numSlides)) {
+      throw new Error(`A geração de slides foi interrompida prematuramente pela API de IA (gerou apenas ${slides.length} de ${numSlides} slides). Por favor, tente novamente.`);
     }
 
     return slides.map((s: any, index: number) => {

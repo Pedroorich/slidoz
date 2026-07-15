@@ -1,13 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { generatePalette, FONT_PAIRINGS, loadAllGoogleFonts } from '../lib/colors';
-import { generateCarouselContent, generateImage, buildCinematicImagePrompt, analyzeCreativeReference, SlideData } from '../lib/gemini';
+import { generateCarouselContent, generateImage, buildCinematicImagePrompt, analyzeCreativeReference, analyzePhotoQuietZone, SlideData } from '../lib/gemini';
 import { CarouselPreview } from '../components/CarouselPreview';
 import { SlideEditor } from '../components/SlideEditor';
 import { toPng } from 'html-to-image';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
-import { Loader2, Download, Wand2, Image as ImageIcon, Upload, Key, ArrowLeft, Settings, LayoutGrid, Edit3, ChevronDown, ChevronRight, X, Bookmark, Plus } from 'lucide-react';
+import { Loader2, Download, Wand2, Image as ImageIcon, Upload, Key, ArrowLeft, Settings, LayoutGrid, Edit3, ChevronDown, ChevronRight, X, Bookmark, Plus, Trash2 } from 'lucide-react';
 import { CarouselHistoryItem } from './Dashboard';
 import { get, set } from 'idb-keyval';
 import { db } from '../lib/firebase';
@@ -71,10 +71,16 @@ export default function GeneratorPage() {
   const [referenceImage, setReferenceImage] = useState<{data: string, mimeType: string, url: string} | null>(null);
   const [creativeReference, setCreativeReference] = useState<{data: string, mimeType: string, url: string} | null>(null);
   const [creativeStylePrompt, setCreativeStylePrompt] = useState<string>('');
+  const [clientPhotos, setClientPhotos] = useState<{data: string, mimeType: string, url: string}[]>([]);
   
   const [savedPalettes, setSavedPalettes] = useState<{id: string, name: string, color: string, secondary?: string, accent?: string, darkBg?: string, lightBg?: string}[]>([]);
   const [isSavingPalette, setIsSavingPalette] = useState(false);
   const [newPaletteName, setNewPaletteName] = useState('');
+  
+  const [customTones, setCustomTones] = useState<{id: string, name: string, description: string}[]>([]);
+  const [selectedToneOption, setSelectedToneOption] = useState('Profissional');
+  const [newToneName, setNewToneName] = useState('');
+  const [newToneDescription, setNewToneDescription] = useState('');
   
   const [slides, setSlides] = useState<SlideData[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -82,6 +88,11 @@ export default function GeneratorPage() {
   const [isExporting, setIsExporting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   
+  const [format, setFormat] = useState<'portrait' | 'square' | 'stories'>('portrait');
+  const [generationLayout, setGenerationLayout] = useState<'default' | 'forbes' | 'twitter' | 'frases'>('default');
+  const [phraseCategory, setPhraseCategory] = useState('Motivação');
+  const [customPhrases, setCustomPhrases] = useState('');
+
   // Mobile Tabs
   const [activeTab, setActiveTab] = useState<'config' | 'preview' | 'edit'>('config');
 
@@ -113,6 +124,7 @@ export default function GeneratorPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const referenceImageInputRef = useRef<HTMLInputElement>(null);
   const creativeReferenceInputRef = useRef<HTMLInputElement>(null);
+  const clientPhotosInputRef = useRef<HTMLInputElement>(null);
 
   const palette = generatePalette(primaryColor, secondaryColor, accentColor, darkBgColor, lightBgColor);
   const selectedFonts = FONT_PAIRINGS[fontPairingIndex];
@@ -121,6 +133,11 @@ export default function GeneratorPage() {
     get('carousel_palettes').then((data) => {
       if (data && Array.isArray(data)) {
         setSavedPalettes(data);
+      }
+    });
+    get('carousel_custom_tones').then((data) => {
+      if (data && Array.isArray(data)) {
+        setCustomTones(data);
       }
     });
   }, []);
@@ -180,7 +197,22 @@ export default function GeneratorPage() {
       setFontPairingIndex(data.fontPairingIndex);
       setNumSlides(data.numSlides);
       setActiveTab('preview');
-    } else if (location.state?.mode === 'manual') {
+
+      const defaultTones = ['Profissional', 'Casual', 'Divertido', 'Ousado', 'Minimalista', 'Educativo'];
+      if (defaultTones.includes(data.tone)) {
+        setSelectedToneOption(data.tone);
+      } else {
+        get('carousel_custom_tones').then((savedTones) => {
+          const matched = Array.isArray(savedTones) && savedTones.find(ct => ct.description === data.tone);
+          if (matched) {
+            setSelectedToneOption(matched.id);
+          } else {
+            setSelectedToneOption('custom_new');
+            setNewToneDescription(data.tone);
+          }
+        });
+      }
+    } else if (location.state?.mode === 'manual' && slides.length === 0) {
       // Initialize empty slides for manual mode
       const emptySlides: SlideData[] = Array.from({ length: numSlides }).map((_, i) => ({
         id: `manual-${Date.now()}-${i}`,
@@ -190,12 +222,19 @@ export default function GeneratorPage() {
         content: 'Clique para editar o texto...',
         alignment: 'center',
         verticalAlignment: 'center',
-        extendBackgroundToNext: isSeamless
+        extendBackgroundToNext: isSeamless,
+        layoutModel: 'default',
+        textOffsetX: 0,
+        textOffsetY: 0,
+        twitterImages: [],
+        twitterImageBorderRadius: 14,
+        twitterImageHeight: 200,
+        forbesQuoteColor: '#F9D30B'
       }));
       setSlides(emptySlides);
       setActiveTab('preview');
     }
-  }, [location.state, numSlides, isSeamless]);
+  }, [location.state]);
 
   const checkApiKey = async () => {
     if (window.aistudio && window.aistudio.hasSelectedApiKey) {
@@ -283,16 +322,41 @@ export default function GeneratorPage() {
           mimeType: file.type,
           url: reader.result as string
         });
+        setIncludeImages(true);
       };
       reader.readAsDataURL(file);
     }
   };
 
-  const saveToHistory = async (generatedSlides: SlideData[]) => {
+  const handleClientPhotosUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (!file) continue;
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const base64String = (reader.result as string).split(',')[1];
+          setClientPhotos(prev => [
+            ...prev,
+            {
+              data: base64String,
+              mimeType: file.type,
+              url: reader.result as string
+            }
+          ]);
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+  };
+
+  const saveToHistory = async (generatedSlides: SlideData[], currentTopic?: string) => {
+    const activeTopic = currentTopic || topic;
     const historyItem: CarouselHistoryItem = {
       id: location.state?.carouselData?.id || Math.random().toString(36).substring(7),
-      title: generatedSlides[0]?.title || topic,
-      topic,
+      title: generatedSlides[0]?.title || activeTopic,
+      topic: activeTopic,
       numSlides,
       slides: generatedSlides,
       brandName,
@@ -323,7 +387,18 @@ export default function GeneratorPage() {
   };
 
   const handleGenerate = async () => {
-    if (!topic) {
+    let activeTopic = topic;
+    if (generationLayout === 'frases' && !topic) {
+      if (customPhrases && customPhrases.trim()) {
+        const firstLine = customPhrases.split('\n')[0]?.trim();
+        activeTopic = firstLine ? (firstLine.substring(0, 40) + "...") : "Frases Personalizadas";
+      } else {
+        activeTopic = `Frases de ${phraseCategory}`;
+      }
+      setTopic(activeTopic);
+    }
+
+    if (!activeTopic) {
       setErrorMessage('Por favor, insira um tópico ou ideia.');
       return;
     }
@@ -355,13 +430,16 @@ export default function GeneratorPage() {
 
     try {
       let finalSlides = await generateCarouselContent(
-        topic,
+        activeTopic,
         numSlides,
         tone,
         brandName,
         includeImages,
         !!referenceImage,
-        isSeamless
+        isSeamless,
+        generationLayout,
+        phraseCategory,
+        customPhrases
       );
       
       // Mostrar os slides imediatamente com o texto
@@ -370,13 +448,93 @@ export default function GeneratorPage() {
       
       let hasImageErrors = false;
       let lastImageError: string | null = null;
-      if (includeImages) {
-        clearInterval(progressInterval);
 
+      // MÓDULO 2 & 3: Imagens Próprias do Cliente (Prioritárias)
+      if (generationLayout === 'frases' && clientPhotos.length > 0) {
+        clearInterval(progressInterval);
+        setProgressText('Processando fotos do cliente...');
+
+        // Analisar o estilo da primeira foto para servir de referência para quaisquer slides extras
+        let activeStylePrompt = creativeStylePrompt;
+        try {
+          setProgressText('Analisando estilo das fotos do cliente...');
+          activeStylePrompt = await analyzeCreativeReference(clientPhotos[0], generationLayout);
+          setCreativeStylePrompt(activeStylePrompt);
+        } catch (styleErr) {
+          console.error("Falha ao analisar estilo da foto de referência:", styleErr);
+        }
+
+        // Processar cada slide
+        for (let index = 0; index < finalSlides.length; index++) {
+          const slide = finalSlides[index];
+
+          if (index < clientPhotos.length) {
+            // MÓDULO 2 & 3: Foto própria do cliente como fundo
+            // Atribuir a foto exatamente como fornecida (sem filtros, crop ou reframe na IA)
+            finalSlides[index] = {
+              ...slide,
+              backgroundImage: clientPhotos[index].url,
+              isClientPhoto: true,
+              imageUrl: undefined // Sem imagem gerada IA
+            };
+            
+            // Analisar a imagem para identificar a "quiet zone"
+            try {
+              setProgressText(`Analisando zona de silêncio na foto ${index + 1}...`);
+              const placement = await analyzePhotoQuietZone(clientPhotos[index]);
+              finalSlides[index].alignment = placement.alignment;
+              finalSlides[index].verticalAlignment = placement.verticalAlignment;
+              finalSlides[index].textOffsetX = placement.textOffsetX;
+              finalSlides[index].textOffsetY = placement.textOffsetY;
+              finalSlides[index].bgGradientOpacity = placement.bgGradientOpacity;
+              finalSlides[index].bgGradientPosition = placement.verticalAlignment === 'top' ? 'top' : 'bottom';
+            } catch (placementErr) {
+              console.error(`Erro ao analisar quiet zone do slide ${index + 1}:`, placementErr);
+              // Fallbacks padrão seguros
+              finalSlides[index].alignment = 'center';
+              finalSlides[index].verticalAlignment = 'bottom';
+              finalSlides[index].bgGradientOpacity = 0.4;
+            }
+          } else {
+            // MÓDULO 3: Se houver mais slides do que fotos, gera novas imagens combinando o estilo das fotos enviadas
+            try {
+              setProgressText(`Gerando imagem complementar no estilo do cliente para slide ${index + 1}...`);
+              const aspectRatio = "4:3";
+              const cinematicPrompt = buildCinematicImagePrompt(
+                slide.imageDescription || slide.title || '',
+                slide.type,
+                index,
+                activeTopic,
+                tone,
+                false, // hasAvatar
+                activeStylePrompt,
+                generationLayout,
+                slide.title,
+                slide.content
+              );
+              // Envia clientPhotos[0] como referência de estilo (creativeReference)
+              const imageUrl = await generateImage(cinematicPrompt, clientPhotos[0], aspectRatio, slide.type, index);
+              finalSlides[index] = {
+                ...slide,
+                imageUrl,
+                isClientPhoto: false
+              };
+            } catch (genErr: any) {
+              console.error(`Erro ao gerar slide extra ${index + 1}:`, genErr);
+              hasImageErrors = true;
+              lastImageError = genErr.message || String(genErr);
+            }
+          }
+          // Atualiza o preview em tempo real
+          setSlides([...finalSlides]);
+        }
+      } else if (includeImages) {
+        clearInterval(progressInterval);
+ 
         let activeStylePrompt = creativeStylePrompt;
         if (creativeReference) {
           setProgressText('Analisando referência criativa...');
-          activeStylePrompt = await analyzeCreativeReference(creativeReference);
+          activeStylePrompt = await analyzeCreativeReference(creativeReference, generationLayout);
           setCreativeStylePrompt(activeStylePrompt);
         }
         
@@ -386,13 +544,13 @@ export default function GeneratorPage() {
         if (totalImages > 0) {
           setProgressText(`Iniciando geração de ${totalImages} imagens...`);
           let completedCount = 0;
-
+ 
           // Gerar em lotes para agilizar o processo sem sobrecarregar a API
           const batchSize = 3;
           const imageTasks = finalSlides
              .map((slide, index) => ({ slide, index }))
              .filter(item => item.slide.imageDescription);
-
+ 
           for (let i = 0; i < imageTasks.length; i += batchSize) {
             const batch = imageTasks.slice(i, i + batchSize);
             
@@ -403,12 +561,15 @@ export default function GeneratorPage() {
                   slide.imageDescription || '',
                   slide.type,
                   index,
-                  topic,
+                  activeTopic,
                   tone,
                   !!referenceImage,
-                  activeStylePrompt
+                  activeStylePrompt,
+                  slide.layoutModel || generationLayout,
+                  slide.title,
+                  slide.content
                 );
-                const imageUrl = await generateImage(cinematicPrompt, referenceImage || undefined, aspectRatio, slide.type, index);
+                const imageUrl = await generateImage(cinematicPrompt, creativeReference || referenceImage || undefined, aspectRatio, slide.type, index);
                 
                 finalSlides[index] = { ...slide, imageUrl };
                 setSlides([...finalSlides]);
@@ -428,7 +589,7 @@ export default function GeneratorPage() {
 
       setProgress(100);
       setProgressText('Concluído!');
-      saveToHistory(finalSlides);
+      saveToHistory(finalSlides, activeTopic);
 
       // Grava log de geração no Firestore para auditoria
       if (user && profile) {
@@ -438,7 +599,7 @@ export default function GeneratorPage() {
             userEmail: user.email || '',
             userName: profile.name || 'Usuário',
             action: 'generate',
-            topic: topic,
+            topic: activeTopic,
             numSlides: numSlides,
             timestamp: serverTimestamp()
           });
@@ -480,6 +641,12 @@ export default function GeneratorPage() {
         }
         if (slide.imageUrl && !slide.imageUrl.startsWith('data:') && !slide.imageUrl.startsWith('blob:')) {
           updated.imageUrl = await urlToBase64(slide.imageUrl);
+        }
+        if (slide.comparisonImageA && !slide.comparisonImageA.startsWith('data:') && !slide.comparisonImageA.startsWith('blob:')) {
+          updated.comparisonImageA = await urlToBase64(slide.comparisonImageA);
+        }
+        if (slide.comparisonImageB && !slide.comparisonImageB.startsWith('data:') && !slide.comparisonImageB.startsWith('blob:')) {
+          updated.comparisonImageB = await urlToBase64(slide.comparisonImageB);
         }
         return updated;
       }));
@@ -599,10 +766,18 @@ export default function GeneratorPage() {
 
         try {
           const bgColor = window.getComputedStyle(el).backgroundColor;
+          let exportWidth = 420;
+          let exportHeight = 525;
+          if (format === 'square') {
+            exportHeight = 420;
+          } else if (format === 'stories') {
+            exportHeight = 746;
+          }
+
           const dataUrl = await toPng(el, {
             pixelRatio: 3,
-            width: 420,
-            height: 525,
+            width: exportWidth,
+            height: exportHeight,
             cacheBust: true,
             skipFonts: true, // Ignora varredura padrão para evitar falhas de CORS, pois as fontes que importam já estão no fontEmbedCSS
             fontEmbedCSS: base64FontCSS || undefined, // Injeta o CSS com as fontes embutidas em base64 diretamente no SVG
@@ -694,10 +869,13 @@ export default function GeneratorPage() {
         topic,
         tone,
         !!referenceImage,
-        creativeStylePrompt
+        creativeStylePrompt,
+        slide.layoutModel,
+        slide.title,
+        slide.content
       );
       
-      const imageUrl = await generateImage(cinematicPrompt, referenceImage || undefined, aspectRatio, slide.type, slideIndex);
+      const imageUrl = await generateImage(cinematicPrompt, creativeReference || referenceImage || undefined, aspectRatio, slide.type, slideIndex);
       const newSlides = slides.map(s => s.id === slideId ? { ...s, imageUrl } : s);
       setSlides(newSlides);
       saveToHistory(newSlides);
@@ -774,18 +952,346 @@ export default function GeneratorPage() {
             {location.state?.mode !== 'manual' && (
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-medium text-[rgba(240,240,240,0.6)]">Tom de Voz</label>
-                <select 
-                  value={tone}
-                  onChange={(e) => setTone(e.target.value)}
-                  className="w-full p-3 bg-[#0A0A0A] border border-[rgba(255,255,255,0.1)] rounded-lg text-sm text-white focus:border-[#6C63FF] outline-none transition-colors"
+                <div className="flex gap-2">
+                  <select 
+                    value={selectedToneOption}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSelectedToneOption(val);
+                      if (val === 'custom_new') {
+                        setTone(newToneDescription);
+                      } else {
+                        const foundCustom = customTones.find(ct => ct.id === val);
+                        if (foundCustom) {
+                          setTone(foundCustom.description);
+                        } else {
+                          setTone(val);
+                        }
+                      }
+                    }}
+                    className="flex-1 p-3 bg-[#0A0A0A] border border-[rgba(255,255,255,0.1)] rounded-lg text-sm text-white focus:border-[#6C63FF] outline-none transition-colors"
+                  >
+                    <optgroup label="Padrão" className="bg-[#0A0A0A]">
+                      <option value="Profissional">Profissional</option>
+                      <option value="Casual">Casual</option>
+                      <option value="Divertido">Divertido</option>
+                      <option value="Ousado">Ousado</option>
+                      <option value="Minimalista">Minimalista</option>
+                      <option value="Educativo">Educativo</option>
+                    </optgroup>
+                    {customTones.length > 0 && (
+                      <optgroup label="Tons Salvos" className="bg-[#0A0A0A]">
+                        {customTones.map((ct) => (
+                          <option key={ct.id} value={ct.id}>{ct.name}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                    <option value="custom_new" className="text-[#6C63FF] font-semibold">+ Personalizada</option>
+                  </select>
+
+                  {customTones.some(ct => ct.id === selectedToneOption) && (
+                    <button
+                      onClick={() => {
+                        const updated = customTones.filter(ct => ct.id !== selectedToneOption);
+                        setCustomTones(updated);
+                        set('carousel_custom_tones', updated);
+                        setSelectedToneOption('Profissional');
+                        setTone('Profissional');
+                      }}
+                      className="p-3 border border-red-500/25 bg-red-500/10 text-red-400 rounded-lg hover:bg-red-500/20 hover:text-red-300 transition-colors cursor-pointer shrink-0"
+                      title="Excluir tom salvo"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  )}
+                </div>
+
+                {selectedToneOption === 'custom_new' && (
+                  <div className="flex flex-col gap-3 p-3 bg-[#111] rounded-lg border border-[rgba(255,255,255,0.04)] animate-fade-in mt-1 text-left">
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-semibold text-[rgba(240,240,240,0.6)] uppercase">Descreva o estilo de tom de voz</label>
+                      <textarea
+                        value={newToneDescription}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setNewToneDescription(val);
+                          setTone(val);
+                        }}
+                        placeholder="Ex: Irreverente, sarcástico, usa gírias de internet e foca em tecnologia..."
+                        className="w-full p-2 bg-[#0A0A0A] border border-[rgba(255,255,255,0.1)] rounded-lg text-xs min-h-[70px] text-white focus:border-[#6C63FF] outline-none"
+                      />
+                    </div>
+
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-semibold text-[rgba(240,240,240,0.6)] uppercase">Nome para salvar (opcional)</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={newToneName}
+                          onChange={(e) => setNewToneName(e.target.value)}
+                          placeholder="Ex: Meu Tom Sarcástico"
+                          className="flex-grow p-2 bg-[#0A0A0A] border border-[rgba(255,255,255,0.1)] rounded-lg text-xs text-white focus:border-[#6C63FF] outline-none"
+                        />
+                        <button
+                          onClick={() => {
+                            if (!newToneDescription.trim()) return;
+                            const name = newToneName.trim() || `Personalizada ${customTones.length + 1}`;
+                            const newToneObj = {
+                              id: `custom-tone-${Date.now()}`,
+                              name,
+                              description: newToneDescription.trim()
+                            };
+                            const updated = [...customTones, newToneObj];
+                            setCustomTones(updated);
+                            set('carousel_custom_tones', updated);
+                            setSelectedToneOption(newToneObj.id);
+                            setTone(newToneObj.description);
+                            setNewToneName('');
+                            setNewToneDescription('');
+                          }}
+                          disabled={!newToneDescription.trim()}
+                          className="px-3.5 py-2 bg-[#6C63FF] disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg hover:bg-[#5b54d6] transition-colors text-xs font-semibold flex items-center gap-1 shrink-0 cursor-pointer"
+                        >
+                          <Bookmark size={12} /> Salvar
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Formato de Proporção (4:5, 1:1, 9:16) */}
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-medium text-[rgba(240,240,240,0.6)]">Formato do Carrossel</label>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  onClick={() => setFormat('portrait')}
+                  className={`py-2 px-1 text-xs border rounded-lg transition-colors font-medium flex flex-col items-center gap-1.5 ${format === 'portrait' ? 'border-[#6C63FF] bg-[rgba(108,99,255,0.1)] text-white' : 'border-[rgba(255,255,255,0.1)] bg-[#0A0A0A] text-[rgba(255,255,255,0.6)] hover:bg-white/5'}`}
                 >
-                  <option>Profissional</option>
-                  <option>Casual</option>
-                  <option>Divertido</option>
-                  <option>Ousado</option>
-                  <option>Minimalista</option>
-                  <option>Educativo</option>
-                </select>
+                  <span className="w-4.5 h-5.5 border border-current rounded-sm block shrink-0" />
+                  Retrato (4:5)
+                </button>
+                <button
+                  onClick={() => setFormat('square')}
+                  className={`py-2 px-1 text-xs border rounded-lg transition-colors font-medium flex flex-col items-center gap-1.5 ${format === 'square' ? 'border-[#6C63FF] bg-[rgba(108,99,255,0.1)] text-white' : 'border-[rgba(255,255,255,0.1)] bg-[#0A0A0A] text-[rgba(255,255,255,0.6)] hover:bg-white/5'}`}
+                >
+                  <span className="w-4.5 h-4.5 border border-current rounded-sm block shrink-0" />
+                  Quadrado (1:1)
+                </button>
+                <button
+                  onClick={() => setFormat('stories')}
+                  className={`py-2 px-1 text-xs border rounded-lg transition-colors font-medium flex flex-col items-center gap-1.5 ${format === 'stories' ? 'border-[#6C63FF] bg-[rgba(108,99,255,0.1)] text-white' : 'border-[rgba(255,255,255,0.1)] bg-[#0A0A0A] text-[rgba(255,255,255,0.6)] hover:bg-white/5'}`}
+                >
+                  <span className="w-3.5 h-6 border border-current rounded-sm block shrink-0" />
+                  Stories (9:16)
+                </button>
+              </div>
+            </div>
+
+            {/* Seleção de Layout com Previews em CSS */}
+            {location.state?.mode !== 'manual' && (
+              <div className="flex flex-col gap-2 mt-1">
+                <label className="text-xs font-medium text-[rgba(240,240,240,0.6)]">Modelo de Layout (Geração IA)</label>
+                <div className="grid grid-cols-2 gap-3 mt-1">
+                  {/* Card Padrão */}
+                  <div 
+                    onClick={() => setGenerationLayout('default')}
+                    className={`cursor-pointer border rounded-xl p-2.5 flex flex-col gap-2 transition-all ${generationLayout === 'default' ? 'border-[#6C63FF] bg-[rgba(108,99,255,0.08)] shadow-[0_0_12px_rgba(108,99,255,0.1)]' : 'border-[rgba(255,255,255,0.06)] bg-[#0A0A0A] hover:border-[rgba(255,255,255,0.15)]'}`}
+                  >
+                    <div className="h-16 w-full rounded bg-gradient-to-tr from-[#6C63FF]/20 to-[#FF6584]/20 border border-white/5 flex flex-col p-1.5 justify-center gap-1 relative overflow-hidden text-left">
+                      <span className="text-[6px] text-white/40 font-bold uppercase tracking-wider block">DICAS</span>
+                      <span className="text-[7px] text-white font-extrabold leading-tight block">Título Principal</span>
+                      <span className="text-[5px] text-white/60 leading-none block">Conteúdo estruturado e pilares.</span>
+                    </div>
+                    <span className="text-[11px] font-semibold text-center block">Padrão</span>
+                  </div>
+
+                  {/* Card Forbes */}
+                  <div 
+                    onClick={() => setGenerationLayout('forbes')}
+                    className={`cursor-pointer border rounded-xl p-2.5 flex flex-col gap-2 transition-all ${generationLayout === 'forbes' ? 'border-[#6C63FF] bg-[rgba(108,99,255,0.08)] shadow-[0_0_12px_rgba(108,99,255,0.1)]' : 'border-[rgba(255,255,255,0.06)] bg-[#0A0A0A] hover:border-[rgba(255,255,255,0.15)]'}`}
+                  >
+                    <div className="h-16 w-full rounded bg-[#090909] border border-white/5 flex flex-col p-1.5 justify-end gap-1 relative overflow-hidden text-left">
+                      <span className="text-[12px] text-[#F9D30B] font-serif leading-none block">“</span>
+                      <span className="text-[7px] text-white font-bold leading-tight block">Citação ou gancho limpo do post</span>
+                      <span className="text-[5px] text-[#F9D30B] font-bold uppercase tracking-wider leading-none block">| CATEGORIA</span>
+                    </div>
+                    <span className="text-[11px] font-semibold text-center block">Forbes</span>
+                  </div>
+
+                  {/* Card Twitter */}
+                  <div 
+                    onClick={() => setGenerationLayout('twitter')}
+                    className={`cursor-pointer border rounded-xl p-2.5 flex flex-col gap-2 transition-all ${generationLayout === 'twitter' ? 'border-[#6C63FF] bg-[rgba(108,99,255,0.08)] shadow-[0_0_12px_rgba(108,99,255,0.1)]' : 'border-[rgba(255,255,255,0.06)] bg-[#0A0A0A] hover:border-[rgba(255,255,255,0.15)]'}`}
+                  >
+                    <div className="h-16 w-full rounded bg-[#15202B] border border-white/5 flex flex-col p-1.5 justify-start gap-1 relative overflow-hidden text-left">
+                      <div className="flex items-center gap-1">
+                        <span className="w-2.5 h-2.5 rounded-full bg-white/20 block shrink-0" />
+                        <div className="flex flex-col leading-none">
+                          <span className="text-[5px] text-white font-bold flex items-center gap-0.5">Nome <span className="text-[#1D9BF0] text-[4px]">✓</span></span>
+                          <span className="text-[4px] text-white/50">@usuario</span>
+                        </div>
+                      </div>
+                      <span className="text-[6px] text-white/90 leading-tight block font-sans">Opinião, checklist ou thread curta no feed.</span>
+                    </div>
+                    <span className="text-[11px] font-semibold text-center block">Twitter</span>
+                  </div>
+
+                  {/* Card Frases */}
+                  <div 
+                    onClick={() => setGenerationLayout('frases')}
+                    className={`cursor-pointer border rounded-xl p-2.5 flex flex-col gap-2 transition-all ${generationLayout === 'frases' ? 'border-[#6C63FF] bg-[rgba(108,99,255,0.08)] shadow-[0_0_12px_rgba(108,99,255,0.1)]' : 'border-[rgba(255,255,255,0.06)] bg-[#0A0A0A] hover:border-[rgba(255,255,255,0.15)]'}`}
+                  >
+                    <div className="h-16 w-full rounded bg-[#161616] border border-white/5 flex flex-col p-1.5 justify-center items-center gap-1 relative overflow-hidden text-center">
+                      <span className="text-[9px] text-[#6C63FF] font-serif leading-none block">“</span>
+                      <span className="text-[6px] text-white/95 font-medium italic leading-tight block max-w-[85%]">Frase ou citação viral minimalista.</span>
+                      <span className="text-[4px] text-white/40 font-bold uppercase tracking-wider leading-none block">@marca</span>
+                    </div>
+                    <span className="text-[11px] font-semibold text-center block">Frases</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Inputs específicos para o layout Frases */}
+            {location.state?.mode !== 'manual' && generationLayout === 'frases' && (
+              <div className="flex flex-col gap-3 p-3 bg-[#111] rounded-lg border border-[rgba(255,255,255,0.04)] animate-fade-in mt-1">
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-semibold text-[rgba(240,240,240,0.6)] uppercase">Clonagem de Conteúdo (Cole suas Frases)</label>
+                  <p className="text-[9px] text-[rgba(240,240,240,0.4)] leading-tight mb-1">Insira suas frases (uma por linha) para clonar o design. Deixe em branco se quiser que a IA crie. <strong>Dica:</strong> palavras curtas e frases de 6 a 8 palavras evitam que o texto seja cortado nas imagens.</p>
+                  <textarea
+                    value={customPhrases}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setCustomPhrases(val);
+                      if (val.trim()) {
+                        const linesCount = val.split('\n').filter(line => line.trim()).length;
+                        if (linesCount > 0 && linesCount <= 15) {
+                          setNumSlides(linesCount);
+                        }
+                      }
+                    }}
+                    placeholder="Cole aqui suas frases (uma por linha)..."
+                    className="w-full p-2 bg-[#0A0A0A] border border-[rgba(255,255,255,0.1)] rounded-lg text-xs min-h-[80px] focus:border-[#6C63FF] outline-none text-white transition-colors"
+                  />
+                </div>
+
+                {!customPhrases.trim() && (
+                  <div className="flex flex-col gap-1 mt-1">
+                    <label className="text-[11px] font-semibold text-[rgba(240,240,240,0.6)] uppercase">Categoria das Frases (IA)</label>
+                    <select
+                      value={phraseCategory}
+                      onChange={(e) => setPhraseCategory(e.target.value)}
+                      className="w-full p-2.5 bg-[#0A0A0A] border border-[rgba(255,255,255,0.1)] rounded-lg text-xs text-white focus:border-[#6C63FF] outline-none transition-colors"
+                    >
+                      <option value="Motivação">Motivação</option>
+                      <option value="Esperança">Esperança</option>
+                      <option value="Bíblicos">Bíblicos / Religiosos</option>
+                      <option value="Impactantes">Impactantes / Provocativos</option>
+                      <option value="Sucesso">Sucesso & Negócios</option>
+                      <option value="Filosóficos">Filosóficos & Profundos</option>
+                    </select>
+                  </div>
+                )}
+
+                {/* Quantidade de Slides para Frases */}
+                <div className="flex flex-col gap-1.5 mt-1 pt-2 border-t border-[rgba(255,255,255,0.05)]">
+                  <label className="text-[11px] font-semibold text-[rgba(240,240,240,0.6)] uppercase flex justify-between">
+                    <span>Quantidade de Slides (Imagens)</span>
+                    <span className="text-[#6C63FF] font-bold">{numSlides}</span>
+                  </label>
+                  <input 
+                    type="range" 
+                    min="1" max="15" 
+                    value={numSlides} 
+                    onChange={(e) => setNumSlides(parseInt(e.target.value))}
+                    className="w-full h-1 bg-[rgba(255,255,255,0.1)] rounded-lg appearance-none cursor-pointer accent-[#6C63FF]"
+                  />
+                </div>
+
+                {/* Upload de Referência de Design para Clonagem de Estilo */}
+                <div className="flex flex-col gap-1.5 mt-2 pt-2 border-t border-[rgba(255,255,255,0.05)]">
+                  <label className="text-[11px] font-semibold text-[rgba(240,240,240,0.6)] uppercase">Design de Referência (Clonagem de Estilo)</label>
+                  <p className="text-[9px] text-[rgba(240,240,240,0.4)] leading-tight mb-1">
+                    Envie um design para clonar a sensação visual, cores e estilo (sem copiar as palavras da imagem).
+                  </p>
+                  <div className="flex items-center gap-3">
+                    {creativeReference ? (
+                      <div className="relative w-12 h-12 rounded-lg overflow-hidden border border-[rgba(255,255,255,0.1)] shrink-0">
+                        <img src={creativeReference.url} alt="Estilo Criativo" className="w-full h-full object-cover" />
+                        <button 
+                          onClick={() => {
+                            setCreativeReference(null);
+                            setCreativeStylePrompt('');
+                          }}
+                          className="absolute inset-0 bg-black/60 text-white flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity text-xs"
+                        >
+                          X
+                        </button>
+                      </div>
+                    ) : (
+                      <button 
+                        onClick={() => creativeReferenceInputRef.current?.click()}
+                        className="w-[120px] h-9 rounded-lg border border-dashed border-[rgba(255,255,255,0.2)] flex items-center justify-center text-[rgba(255,255,255,0.4)] hover:bg-[rgba(255,255,255,0.05)] hover:border-[#6C63FF] hover:text-[#6C63FF] transition-colors text-xs gap-1.5"
+                        title="Enviar imagem de estilo criativo"
+                      >
+                        <Upload size={13} /> Ref. Visual
+                      </button>
+                    )}
+                    <span className="text-[10px] text-[rgba(240,240,240,0.4)]">
+                      {creativeReference ? 'Estilo Carregado' : 'Nenhuma imagem enviada'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Upload de Fotos do Cliente (Módulo 2 e 3) */}
+                <div className="flex flex-col gap-1.5 mt-2 pt-2 border-t border-[rgba(255,255,255,0.05)]">
+                  <label className="text-[11px] font-semibold text-[rgba(240,240,240,0.6)] uppercase">Suas Fotos de Fundo (Opcional)</label>
+                  <p className="text-[9px] text-[rgba(240,240,240,0.4)] leading-tight mb-1">
+                    Envie fotos próprias para usar de fundo. Se enviar 2 ou mais, cada uma irá em um slide na mesma ordem.
+                  </p>
+                  <div className="flex flex-wrap gap-2 items-center">
+                    {clientPhotos.map((photo, pIdx) => (
+                      <div key={pIdx} className="relative w-12 h-12 rounded-lg overflow-hidden border border-[rgba(255,255,255,0.1)] shrink-0">
+                        <img src={photo.url} alt={`Foto ${pIdx + 1}`} className="w-full h-full object-cover" />
+                        <button 
+                          onClick={() => setClientPhotos(prev => prev.filter((_, idx) => idx !== pIdx))}
+                          className="absolute inset-0 bg-black/60 text-white flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity text-xs"
+                        >
+                          X
+                        </button>
+                      </div>
+                    ))}
+                    <button 
+                      onClick={() => clientPhotosInputRef.current?.click()}
+                      className="w-12 h-12 rounded-lg border border-dashed border-[rgba(255,255,255,0.2)] flex items-center justify-center text-[rgba(255,255,255,0.4)] hover:bg-[rgba(255,255,255,0.05)] hover:border-[#6C63FF] hover:text-[#6C63FF] transition-colors"
+                      title="Enviar suas fotos de fundo"
+                    >
+                      <Plus size={16} />
+                    </button>
+                    <input 
+                      type="file" 
+                      ref={clientPhotosInputRef}
+                      onChange={handleClientPhotosUpload}
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                    />
+                  </div>
+                </div>
+
+                {/* Botão Gerar Carrossel de Frases */}
+                <div className="mt-3 pt-3 border-t border-[rgba(255,255,255,0.05)]">
+                  <button
+                    onClick={handleGenerate}
+                    disabled={isGenerating}
+                    className="w-full py-2.5 bg-gradient-to-r from-[#6C63FF] to-[#FF6584] text-white rounded-lg font-semibold disabled:opacity-50 hover:opacity-95 transition-all flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(108,99,255,0.15)] text-xs"
+                  >
+                    {isGenerating ? <Loader2 className="animate-spin" size={14} /> : <Wand2 size={14} />}
+                    {isGenerating ? `Gerando (${Math.round(progress)}%)...` : 'Gerar Carrossel'}
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -826,9 +1332,6 @@ export default function GeneratorPage() {
             </div>
 
             <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-medium text-[rgba(240,240,240,0.6)]">Cores da Marca</label>
-              </div>
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-medium text-[rgba(240,240,240,0.6)]">Cores da Marca</label>
@@ -839,6 +1342,10 @@ export default function GeneratorPage() {
                   >
                     <Bookmark size={12} /> Salvar
                   </button>
+                </div>
+
+                <div className="text-[10px] text-amber-400/90 bg-amber-400/10 border border-amber-400/20 rounded p-2.5 leading-relaxed">
+                  💡 <strong>Nota sobre travamento:</strong> Se o conta-gotas de cor travar o navegador, atualize seu Google Chrome/Edge (é um bug conhecido do Windows) ou digite a cor Hexadecimal manualmente.
                 </div>
                 
                 <div className="grid grid-cols-2 gap-2">
@@ -1093,7 +1600,13 @@ export default function GeneratorPage() {
                     <input 
                       type="checkbox" 
                       checked={isSeamless}
-                      onChange={(e) => setIsSeamless(e.target.checked)}
+                      onChange={(e) => {
+                        const val = e.target.checked;
+                        setIsSeamless(val);
+                        if (location.state?.mode === 'manual') {
+                          setSlides(prev => prev.map(s => ({ ...s, extendBackgroundToNext: val })));
+                        }
+                      }}
                       className="peer appearance-none w-4 h-4 border border-[rgba(255,255,255,0.2)] rounded bg-[#0A0A0A] checked:bg-[#6C63FF] checked:border-[#6C63FF] transition-colors cursor-pointer"
                     />
                     <svg className="absolute w-2.5 h-2.5 text-white opacity-0 peer-checked:opacity-100 pointer-events-none" viewBox="0 0 14 10" fill="none">
@@ -1127,13 +1640,6 @@ export default function GeneratorPage() {
                         <Upload size={18} />
                       </button>
                     )}
-                    <input 
-                      type="file" 
-                      ref={referenceImageInputRef}
-                      onChange={handleReferenceImageUpload}
-                      accept="image/*"
-                      className="hidden"
-                    />
                   </div>
                 </div>
 
@@ -1163,13 +1669,6 @@ export default function GeneratorPage() {
                         <Upload size={14} /> Ref. Visual
                       </button>
                     )}
-                    <input 
-                      type="file" 
-                      ref={creativeReferenceInputRef}
-                      onChange={handleCreativeReferenceUpload}
-                      accept="image/*"
-                      className="hidden"
-                    />
                   </div>
                 </div>
               </div>
@@ -1317,7 +1816,13 @@ export default function GeneratorPage() {
                 content: 'Clique para editar o texto...',
                 alignment: 'center',
                 verticalAlignment: 'center',
-                extendBackgroundToNext: isSeamless
+                extendBackgroundToNext: isSeamless,
+                layoutModel: 'default',
+                textOffsetX: 0,
+                textOffsetY: 0,
+                twitterImages: [],
+                twitterImageBorderRadius: 14,
+                twitterImageHeight: 205
               }];
               setSlides(newSlides);
               setNumSlides(newSlides.length);
@@ -1414,6 +1919,7 @@ export default function GeneratorPage() {
                 currentIndex={currentIndex}
                 setCurrentIndex={setCurrentIndex}
                 previewRef={previewRef}
+                format={format}
               />
             </div>
           ) : (
@@ -1450,6 +1956,7 @@ export default function GeneratorPage() {
                     const newSlides = [...slides];
                     newSlides[currentIndex - 1] = { ...newSlides[currentIndex - 1], ...updates };
                     setSlides(newSlides);
+                    saveToHistoryDebounced(newSlides);
                   }
                 }}
                 onRegenerateImage={handleRegenerateImage}
@@ -1547,6 +2054,23 @@ export default function GeneratorPage() {
           </div>
         </div>
       )}
+
+      {/* Hidden file inputs for references (always mounted to avoid unmounted ref errors) */}
+      <input 
+        type="file" 
+        ref={referenceImageInputRef}
+        onChange={handleReferenceImageUpload}
+        accept="image/*"
+        className="hidden"
+      />
+      <input 
+        type="file" 
+        ref={creativeReferenceInputRef}
+        onChange={handleCreativeReferenceUpload}
+        accept="image/*"
+        className="hidden"
+      />
     </div>
   );
+
 }
