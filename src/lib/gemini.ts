@@ -85,6 +85,220 @@ export interface SlideData {
   forbesQuoteColor?: string;
 }
 
+/**
+ * Limpa e escapa caracteres de controle não-escapados (como quebras de linha literais \n e \r) dentro de strings JSON.
+ * Isso previne o erro clássico "Unterminated string in JSON at position X".
+ */
+export function cleanJsonControlChars(input: string): string {
+  let result = '';
+  let inString = false;
+  let isEscaped = false;
+
+  for (let i = 0; i < input.length; i++) {
+    const char = input[i];
+
+    if (inString) {
+      if (isEscaped) {
+        result += char;
+        isEscaped = false;
+      } else if (char === '\\') {
+        result += char;
+        isEscaped = true;
+      } else if (char === '"') {
+        result += char;
+        inString = false;
+      } else if (char === '\n') {
+        result += '\\n';
+      } else if (char === '\r') {
+        result += '\\r';
+      } else if (char === '\t') {
+        result += '\\t';
+      } else if (char.charCodeAt(0) < 32) {
+        result += ' ';
+      } else {
+        result += char;
+      }
+    } else {
+      if (char === '"') {
+        inString = true;
+      }
+      result += char;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Tenta reparar progressivamente JSONs truncados ou com fechamentos ausentes.
+ */
+export function repairTruncatedJson<T = any>(input: string): T | null {
+  let t = input.trim();
+  if (!t) return null;
+
+  // Verifica se há aspas abertas não-fechadas
+  let inString = false;
+  let isEscaped = false;
+  for (let i = 0; i < t.length; i++) {
+    const char = t[i];
+    if (isEscaped) {
+      isEscaped = false;
+    } else if (char === '\\') {
+      isEscaped = true;
+    } else if (char === '"') {
+      inString = !inString;
+    }
+  }
+
+  if (inString) {
+    t += '"';
+  }
+
+  const isArray = t.startsWith('[');
+
+  // Tentativas de fechamento rápido
+  const quickClosures = isArray
+    ? [']', '}', '}]', '"}', '"}]', '""}]']
+    : ['}', '"}', '""}'];
+
+  for (const c of quickClosures) {
+    try {
+      return JSON.parse(t + c);
+    } catch (_) {}
+  }
+
+  // Tenta podar no último separador estrutural válido
+  let work = t;
+  while (work.length > 5) {
+    const lastComma = work.lastIndexOf(',');
+    const lastBrace = work.lastIndexOf('}');
+    const cutIndex = Math.max(lastComma, lastBrace);
+    if (cutIndex <= 0) break;
+
+    work = work.substring(0, cutIndex).trim();
+    if (work.endsWith(',')) work = work.substring(0, work.length - 1).trim();
+
+    const closures = [isArray ? ']' : '}', isArray ? '}]' : '}'];
+    for (const c of closures) {
+      try {
+        return JSON.parse(work + c);
+      } catch (_) {}
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Extração de slides via regex como fallback seguro para modelos que falham no JSON.
+ */
+export function regexExtractSlides(text: string): SlideData[] {
+  const slides: SlideData[] = [];
+  const objRegex = /\{[^{}]*?"title"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"[^{}]*?\}/gs;
+  let match;
+  while ((match = objRegex.exec(text)) !== null) {
+    try {
+      const fixedObj = cleanJsonControlChars(match[0]);
+      const parsed = JSON.parse(fixedObj);
+      if (parsed.title) {
+        slides.push(parsed);
+      }
+    } catch (_) {
+      const titleMatch = match[0].match(/"title"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/);
+      const contentMatch = match[0].match(/"content"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/);
+      const layoutMatch = match[0].match(/"layoutModel"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/);
+      if (titleMatch) {
+        slides.push({
+          id: Math.random().toString(36).substring(7),
+          type: 'features',
+          background: 'light',
+          title: titleMatch[1].replace(/\\n/g, '\n'),
+          content: contentMatch ? contentMatch[1].replace(/\\n/g, '\n') : '',
+          layoutModel: (layoutMatch ? layoutMatch[1] : 'default') as any,
+          alignment: 'left'
+        });
+      }
+    }
+  }
+  return slides;
+}
+
+/**
+ * Parser resiliente para respostas de IA que lida com markdown, caracteres não-escapados,
+ * wrappers de objeto dinâmicos e truncamento.
+ */
+export function robustJsonParse<T = any>(rawText: string, fallbackValue?: T): T {
+  if (!rawText || typeof rawText !== 'string') {
+    if (fallbackValue !== undefined) return fallbackValue;
+    throw new Error("Texto JSON vazio ou inválido.");
+  }
+
+  let text = rawText.trim();
+
+  // 1. Remove markdown fences (```json ... ``` ou ``` ... ```)
+  text = text.replace(/```(?:json)?\s*([\s\S]*?)\s*```/gi, '$1').trim();
+  text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+
+  // 2. Extrai o bloco estrutural inicial ([ ou {)
+  const firstBracket = text.indexOf('[');
+  const firstBrace = text.indexOf('{');
+
+  let startIdx = -1;
+  let endChar = '';
+
+  if (firstBracket !== -1 && (firstBrace === -1 || firstBracket < firstBrace)) {
+    startIdx = firstBracket;
+    endChar = ']';
+  } else if (firstBrace !== -1) {
+    startIdx = firstBrace;
+    endChar = '}';
+  }
+
+  if (startIdx !== -1) {
+    const lastEndIdx = text.lastIndexOf(endChar);
+    if (lastEndIdx > startIdx) {
+      text = text.substring(startIdx, lastEndIdx + 1);
+    } else {
+      text = text.substring(startIdx);
+    }
+  }
+
+  // Tentativa 1: Parse direto
+  try {
+    return JSON.parse(text);
+  } catch (_) {}
+
+  // Tentativa 2: Sanitização de caracteres de controle em strings
+  let sanitized = cleanJsonControlChars(text);
+  try {
+    return JSON.parse(sanitized);
+  } catch (_) {}
+
+  // Tentativa 3: Remover trailing commas
+  sanitized = sanitized.replace(/,\s*([\]}])/g, '$1');
+  try {
+    return JSON.parse(sanitized);
+  } catch (_) {}
+
+  // Tentativa 4: Reparo de truncamento
+  const repaired = repairTruncatedJson<T>(sanitized);
+  if (repaired !== null) {
+    return repaired;
+  }
+
+  // Tentativa 5: Extração via Regex de objetos individuais (para carrossel)
+  const extracted = regexExtractSlides(text);
+  if (extracted.length > 0) {
+    return extracted as unknown as T;
+  }
+
+  if (fallbackValue !== undefined) {
+    return fallbackValue;
+  }
+
+  throw new Error("Formato de resposta da IA inválido. Por favor, tente gerar novamente.");
+}
+
 export async function generateImage(
   prompt: string,
   referenceImage?: { data: string, mimeType: string },
@@ -364,7 +578,7 @@ Return a JSON object with:
 
       const resJson = await response.json();
       const content = resJson.choices?.[0]?.message?.content || "";
-      const parsed = JSON.parse(content.trim());
+      const parsed = robustJsonParse<any>(content, {});
       return {
         alignment: parsed.alignment || 'center',
         verticalAlignment: parsed.verticalAlignment || 'bottom',
@@ -405,7 +619,7 @@ Return a JSON object with:
       }
     });
 
-    const parsed = JSON.parse(response.text?.trim() || "{}");
+    const parsed = robustJsonParse<any>(response.text || "{}", {});
     return {
       alignment: parsed.alignment || 'center',
       verticalAlignment: parsed.verticalAlignment || 'bottom',
@@ -972,11 +1186,32 @@ export async function generateCarouselContent(
         max_tokens: 4000
       };
 
-      const openRouterResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      let openRouterResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: headers,
         body: JSON.stringify(requestBody)
       });
+
+      if (!openRouterResponse.ok) {
+        if (openRouterResponse.status === 400) {
+          const retryBody = {
+            model: customModel,
+            messages: [
+              { role: 'user', content: prompt + "\n\nCRÍTICO: Responda APENAS com a estrutura JSON válida, sem texto adicional." }
+            ],
+            temperature: 0.7,
+            max_tokens: 4000
+          };
+          const retryResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            method: "POST",
+            headers: headers,
+            body: JSON.stringify(retryBody)
+          });
+          if (retryResponse.ok) {
+            openRouterResponse = retryResponse;
+          }
+        }
+      }
 
       if (!openRouterResponse.ok) {
         const errorText = await openRouterResponse.text();
@@ -992,13 +1227,31 @@ export async function generateCarouselContent(
         throw new Error("A API do OpenRouter não retornou conteúdo na resposta.");
       }
 
-      let slides = JSON.parse(contentText.trim());
-      
-      if (!Array.isArray(slides)) {
-        if (slides && typeof slides === 'object' && Array.isArray(slides.slides)) {
-          slides = slides.slides;
+      let slides: any[] = [];
+      try {
+        const rawParsed = robustJsonParse<any>(contentText);
+        if (Array.isArray(rawParsed)) {
+          slides = rawParsed;
+        } else if (rawParsed && typeof rawParsed === 'object') {
+          if (Array.isArray(rawParsed.slides)) {
+            slides = rawParsed.slides;
+          } else if (Array.isArray(rawParsed.carousel)) {
+            slides = rawParsed.carousel;
+          } else if (Array.isArray(rawParsed.data)) {
+            slides = rawParsed.data;
+          } else if (Array.isArray(rawParsed.items)) {
+            slides = rawParsed.items;
+          } else {
+            slides = [rawParsed];
+          }
+        }
+      } catch (parseErr) {
+        console.error("Falha no parsing OpenRouter:", parseErr);
+        const fallbackSlides = regexExtractSlides(contentText);
+        if (fallbackSlides.length > 0) {
+          slides = fallbackSlides;
         } else {
-          slides = [slides];
+          throw new Error("A IA gerou um formato de texto que não pôde ser interpretado. Por favor, tente novamente.");
         }
       }
 
@@ -1100,69 +1353,47 @@ export async function generateCarouselContent(
       }
     });
 
-    let text = response.text;
+    const text = response.text;
     if (!text) throw new Error("A IA não retornou nenhum texto.");
-    
-    // Remove markdown formatting if present
-    text = text.replace(/^```json\n?/, '').replace(/\n?```$/, '').trim();
-    
-    let slides;
+
+    let slides: any[] = [];
     try {
-      slides = JSON.parse(text);
-    } catch (parseError) {
-      console.error("Failed to parse JSON:", text);
-      
-      // Robust JSON repair for truncated arrays
-      let t = text.trim();
-      let repaired = false;
-      
-      if (t.startsWith('[')) {
-        while (t.length > 1) {
-          try {
-            let attempt = t;
-            if (!attempt.endsWith(']')) {
-              if (!attempt.endsWith('}')) {
-                 attempt += '"}'; // Try to close a potential open string and object
-              }
-              attempt += ']';
-            }
-            slides = JSON.parse(attempt);
-            repaired = true;
-            console.log("Successfully repaired truncated JSON.");
-            break;
-          } catch (e) {
-            // Remove the last character and try again, or jump to the last structural character
-            const lastComma = t.lastIndexOf(',');
-            const lastBrace = t.lastIndexOf('}');
-            const cutIndex = Math.max(lastComma, lastBrace);
-            
-            if (cutIndex <= 0) {
-              break;
-            }
-            t = t.substring(0, cutIndex);
-          }
+      const rawParsed = robustJsonParse<any>(text);
+      if (Array.isArray(rawParsed)) {
+        slides = rawParsed;
+      } else if (rawParsed && typeof rawParsed === 'object') {
+        if (Array.isArray(rawParsed.slides)) {
+          slides = rawParsed.slides;
+        } else if (Array.isArray(rawParsed.carousel)) {
+          slides = rawParsed.carousel;
+        } else if (Array.isArray(rawParsed.data)) {
+          slides = rawParsed.data;
+        } else if (Array.isArray(rawParsed.items)) {
+          slides = rawParsed.items;
+        } else {
+          slides = [rawParsed];
         }
       }
-      
-      if (!repaired) {
+    } catch (parseErr) {
+      console.error("Falha no robustJsonParse do Gemini:", parseErr);
+      const fallbackSlides = regexExtractSlides(text);
+      if (fallbackSlides.length > 0) {
+        slides = fallbackSlides;
+      } else {
         throw new Error("A IA gerou um formato inválido que não pôde ser recuperado. Por favor, tente gerar novamente.");
       }
     }
-    
-    if (!Array.isArray(slides)) {
-      if (slides && typeof slides === 'object' && Array.isArray(slides.slides)) {
-        slides = slides.slides;
-      } else {
-        slides = [slides];
-      }
+
+    if (!slides || slides.length === 0) {
+      console.warn("Nenhum slide pôde ser extraído da resposta. Usando fallback local.");
+      return generateLocalCarouselFallback(topic, numSlides, tone, brandName, includeImages, isSeamless);
     }
 
     if (slides.length < Math.min(3, numSlides)) {
-      throw new Error(`A geração de slides foi interrompida prematuramente pela API de IA (gerou apenas ${slides.length} de ${numSlides} slides). Por favor, tente novamente.`);
+      console.warn(`A geração gerou apenas ${slides.length} de ${numSlides} slides.`);
     }
 
     return slides.map((s: any, index: number) => {
-      // If seamless, even slides might not have an image description
       const isEvenSeamlessSlide = isSeamless && index % 2 !== 0;
       
       if (includeImages && !isEvenSeamlessSlide && (!s.imageDescription || s.imageDescription.trim() === '')) {
