@@ -1,6 +1,82 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { SlideData } from '../lib/gemini';
-import { AlignLeft, AlignCenter, AlignRight, RefreshCw, Image as ImageIcon, ArrowUpToLine, ArrowDownToLine, AlignVerticalJustifyCenter, Upload, Plus, Trash2, Layers, Copy, ChevronDown, ChevronUp, LayoutGrid, Palette, Type, Highlighter } from 'lucide-react';
+import React, { useState, useRef, useEffect, memo } from 'react';
+import { SlideData, refineSlideText } from '../lib/gemini';
+import { AlignLeft, AlignCenter, AlignRight, RefreshCw, Image as ImageIcon, ArrowUpToLine, ArrowDownToLine, AlignVerticalJustifyCenter, Upload, Plus, Trash2, Layers, Copy, ChevronDown, ChevronUp, LayoutGrid, Palette, Type, Highlighter, Sparkles, Wand2, Zap, Flame, Lightbulb } from 'lucide-react';
+
+function AiTextRefiner({
+  text,
+  field,
+  onApply
+}: {
+  text: string;
+  field: 'title' | 'content';
+  onApply: (newText: string) => void;
+}) {
+  const [loadingAction, setLoadingAction] = useState<string | null>(null);
+
+  const handleRefine = async (action: 'shorten' | 'provocative' | 'analogy' | 'simplify') => {
+    if (!text || !text.trim()) return;
+    setLoadingAction(action);
+    try {
+      const cleanText = text.replace(/<[^>]*>/g, '');
+      const refined = await refineSlideText(cleanText, action, field);
+      if (refined) {
+        onApply(refined);
+      }
+    } catch (e) {
+      console.error("Falha ao refinar com IA:", e);
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap pt-0.5 pb-1">
+      <span className="text-[9px] font-bold text-[#6C63FF] uppercase tracking-wider flex items-center gap-1 shrink-0">
+        <Sparkles size={10} /> Copilot IA:
+      </span>
+      <button
+        type="button"
+        disabled={!!loadingAction || !text.trim()}
+        onClick={() => handleRefine('shorten')}
+        className="px-2 py-0.5 rounded bg-[rgba(108,99,255,0.08)] hover:bg-[rgba(108,99,255,0.18)] border border-[rgba(108,99,255,0.2)] text-[10px] text-white flex items-center gap-1 transition-all disabled:opacity-40 cursor-pointer"
+        title="Encurtar mantendo o impacto"
+      >
+        {loadingAction === 'shorten' ? <RefreshCw size={10} className="animate-spin text-[#6C63FF]" /> : <Zap size={10} className="text-amber-400" />}
+        <span>Encurtar</span>
+      </button>
+      <button
+        type="button"
+        disabled={!!loadingAction || !text.trim()}
+        onClick={() => handleRefine('provocative')}
+        className="px-2 py-0.5 rounded bg-[rgba(255,99,132,0.08)] hover:bg-[rgba(255,99,132,0.18)] border border-[rgba(255,99,132,0.2)] text-[10px] text-white flex items-center gap-1 transition-all disabled:opacity-40 cursor-pointer"
+        title="Tornar mais provocativo e forte"
+      >
+        {loadingAction === 'provocative' ? <RefreshCw size={10} className="animate-spin text-pink-400" /> : <Flame size={10} className="text-pink-400" />}
+        <span>Provocativo</span>
+      </button>
+      <button
+        type="button"
+        disabled={!!loadingAction || !text.trim()}
+        onClick={() => handleRefine('analogy')}
+        className="px-2 py-0.5 rounded bg-[rgba(56,189,248,0.08)] hover:bg-[rgba(56,189,248,0.18)] border border-[rgba(56,189,248,0.2)] text-[10px] text-white flex items-center gap-1 transition-all disabled:opacity-40 cursor-pointer"
+        title="Criar analogia simples da vida real"
+      >
+        {loadingAction === 'analogy' ? <RefreshCw size={10} className="animate-spin text-cyan-400" /> : <Lightbulb size={10} className="text-cyan-400" />}
+        <span>Analogia</span>
+      </button>
+      <button
+        type="button"
+        disabled={!!loadingAction || !text.trim()}
+        onClick={() => handleRefine('simplify')}
+        className="px-2 py-0.5 rounded bg-[rgba(52,211,153,0.08)] hover:bg-[rgba(52,211,153,0.18)] border border-[rgba(52,211,153,0.2)] text-[10px] text-white flex items-center gap-1 transition-all disabled:opacity-40 cursor-pointer"
+        title="Simplificar vocabulário"
+      >
+        {loadingAction === 'simplify' ? <RefreshCw size={10} className="animate-spin text-emerald-400" /> : <Wand2 size={10} className="text-emerald-400" />}
+        <span>Simplificar</span>
+      </button>
+    </div>
+  );
+}
 
 function RichTextEditor({ value, onChange, fonts }: { value: string, onChange: (val: string) => void, fonts: any[] }) {
   const editorRef = useRef<HTMLDivElement>(null);
@@ -129,6 +205,13 @@ function RichTextEditor({ value, onChange, fonts }: { value: string, onChange: (
     handleInput();
   };
 
+  const handlePaste = (e: React.ClipboardEvent) => {
+    e.preventDefault();
+    const text = e.clipboardData.getData('text/plain');
+    document.execCommand('insertText', false, text);
+    handleInput();
+  };
+
   return (
     <div className="border border-[rgba(255,255,255,0.1)] rounded-md overflow-hidden flex flex-col">
       <div className="flex flex-wrap gap-1 p-1 bg-[#0A0A0A] border-b border-[rgba(255,255,255,0.1)] items-center">
@@ -161,6 +244,7 @@ function RichTextEditor({ value, onChange, fonts }: { value: string, onChange: (
         contentEditable
         onInput={handleInput}
         onBlur={handleInput}
+        onPaste={handlePaste}
         onMouseUp={saveSelection}
         onKeyUp={saveSelection}
         className="p-2 text-sm min-h-[80px] focus:outline-none bg-[#161616] text-white"
@@ -178,7 +262,7 @@ interface SlideEditorProps {
   fonts: { name: string, heading: string, body: string }[];
 }
 
-export function SlideEditor({ slide, prevSlide, onChange, onChangePrev, onRegenerateImage, fonts }: SlideEditorProps) {
+export const SlideEditor = memo(function SlideEditor({ slide, prevSlide, onChange, onChangePrev, onRegenerateImage, fonts }: SlideEditorProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [showTitleAdvanced, setShowTitleAdvanced] = useState(false);
   const [activeTab, setActiveTab] = useState<'style' | 'text' | 'image' | 'extras'>('style');
@@ -921,7 +1005,14 @@ export function SlideEditor({ slide, prevSlide, onChange, onChangePrev, onRegene
             )}
 
             <div className="flex flex-col gap-1" key={`${slide.id}-title-container`}>
-              <label className="text-xs font-semibold text-[rgba(240,240,240,0.6)] uppercase">Título</label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-[rgba(240,240,240,0.6)] uppercase">Título</label>
+              </div>
+              <AiTextRefiner 
+                text={slide.title || ''} 
+                field="title" 
+                onApply={(newText) => handleChange('title', newText)} 
+              />
               <RichTextEditor 
                 value={slide.title} 
                 onChange={(val) => handleChange('title', val)} 
@@ -986,7 +1077,14 @@ export function SlideEditor({ slide, prevSlide, onChange, onChangePrev, onRegene
             </div>
 
             <div className="flex flex-col gap-1" key={`${slide.id}-content-container`}>
-              <label className="text-xs font-semibold text-[rgba(240,240,240,0.6)] uppercase">Conteúdo</label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-[rgba(240,240,240,0.6)] uppercase">Conteúdo</label>
+              </div>
+              <AiTextRefiner 
+                text={slide.content || ''} 
+                field="content" 
+                onApply={(newText) => handleChange('content', newText)} 
+              />
               <RichTextEditor 
                 value={slide.content || ''} 
                 onChange={(val) => handleChange('content', val)} 
@@ -1600,4 +1698,4 @@ export function SlideEditor({ slide, prevSlide, onChange, onChangePrev, onRegene
       </div>
     </div>
   );
-}
+});

@@ -56,23 +56,37 @@ export const FONT_PAIRINGS = [
 export function loadAllGoogleFonts() {
   const linkId = 'google-fonts-all';
   if (document.getElementById(linkId)) return;
-  
+
+  // Add preconnect for faster TLS handshake
+  if (!document.getElementById('google-fonts-preconnect')) {
+    const pre1 = document.createElement('link');
+    pre1.id = 'google-fonts-preconnect';
+    pre1.rel = 'preconnect';
+    pre1.href = 'https://fonts.googleapis.com';
+    document.head.appendChild(pre1);
+
+    const pre2 = document.createElement('link');
+    pre2.rel = 'preconnect';
+    pre2.href = 'https://fonts.gstatic.com';
+    pre2.crossOrigin = 'anonymous';
+    document.head.appendChild(pre2);
+  }
+
   const families = FONT_PAIRINGS.flatMap(f => [f.heading, f.body])
     .filter((v, i, a) => a.indexOf(v) === i) // unique
     .filter(f => f !== 'Monument Extended' && f !== 'Times New Roman') // not on google fonts
     .map(f => {
-      // Algumas fontes só têm peso 400 (ex: Anton, Bebas Neue, Instrument Serif, Bagel Fat One)
       if (['Anton', 'Bebas Neue', 'Instrument Serif', 'Bagel Fat One'].includes(f)) {
         return `${f.replace(/ /g, '+')}:wght@400`;
       }
-      return `${f.replace(/ /g, '+')}:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,300;1,400;1,500;1,600;1,700;1,800`;
+      // Otimizado: carrega apenas 400 (normal) e 700 (negrito), economizando mais de 80% de banda
+      return `${f.replace(/ /g, '+')}:wght@400;700`;
     })
     .join('&family=');
-    
+
   const link = document.createElement('link');
   link.id = linkId;
   link.rel = 'stylesheet';
-  link.crossOrigin = 'anonymous';
   link.href = `https://fonts.googleapis.com/css2?family=${families}&display=swap`;
   document.head.appendChild(link);
 }

@@ -1419,3 +1419,449 @@ export async function generateCarouselContent(
     return generateLocalCarouselFallback(topic, numSlides, tone, brandName, includeImages, isSeamless);
   }
 }
+
+/**
+ * Função utilitária para chamadas de texto para IA com suporte a OpenRouter e Gemini.
+ */
+async function callTextAi(prompt: string, maxTokens: number = 2000, jsonMode: boolean = false): Promise<string> {
+  const customKey = localStorage.getItem('custom_gemini_key');
+  const customOpenRouterKey = localStorage.getItem('custom_openrouter_key');
+  const customProvider = localStorage.getItem('custom_ai_provider') || 'gemini';
+  const customModel = localStorage.getItem('custom_openrouter_model_custom')?.trim() || localStorage.getItem('custom_openrouter_model') || 'google/gemini-2.5-flash';
+
+  const isOpenRouter = customProvider === 'openrouter' || (customKey && customKey.startsWith('sk-or-')) || (customOpenRouterKey && customOpenRouterKey.startsWith('sk-or-'));
+  const apiKey = isOpenRouter 
+    ? (customOpenRouterKey || customKey || process.env.API_KEY || process.env.GEMINI_API_KEY || "DUMMY_KEY")
+    : (customKey || process.env.API_KEY || process.env.GEMINI_API_KEY || "DUMMY_KEY");
+
+  if (isOpenRouter) {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`
+    };
+    const reqBody: any = {
+      model: customModel,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.7,
+      max_tokens: maxTokens
+    };
+    if (jsonMode) {
+      reqBody.response_format = { type: "json_object" };
+    }
+
+    let res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers,
+      body: JSON.stringify(reqBody)
+    });
+
+    if (!res.ok && jsonMode && res.status === 400) {
+      delete reqBody.response_format;
+      res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers,
+        body: JSON.stringify(reqBody)
+      });
+    }
+
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`Erro OpenRouter: ${res.status} - ${err}`);
+    }
+
+    const resJson = await res.json();
+    return resJson.choices?.[0]?.message?.content || "";
+  }
+
+  const currentAi = new GoogleGenAI({ apiKey });
+  const response = await currentAi.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: prompt,
+    config: {
+      maxOutputTokens: maxTokens,
+      temperature: 0.7,
+      ...(jsonMode ? { responseMimeType: "application/json" } : {})
+    }
+  });
+
+  return response.text || "";
+}
+
+export interface PostCaptionResult {
+  caption: string;
+  hashtags: string[];
+  firstComment: string;
+}
+
+/**
+ * 7. Gerador Automático de Legenda + Hashtags + Primeiro Comentário
+ */
+export async function generatePostCaption(
+  topic: string,
+  slides: SlideData[],
+  brandName: string,
+  tone: string
+): Promise<PostCaptionResult> {
+  const slidesSummary = slides.map((s, i) => `Slide ${i + 1}: [${s.tag || s.type}] ${s.title || ''} - ${s.content || ''}`).join('\n');
+
+  const prompt = `
+Você é um estrategista de conteúdo e copywriter especialista em Instagram de alta conversão.
+Crie a legenda perfeita para o seguinte post em formato de carrossel:
+
+TEMA DO POST: "${topic}"
+NOME DA MARCA: "${brandName}"
+TOM DE VOZ: "${tone}"
+
+CONTEÚDO DOS SLIDES:
+${slidesSummary}
+
+INSTRUÇÕES:
+1. Comece com uma linha de gancho irresistível (que faça o usuário clicar em "...mais").
+2. Adicione um breve desenvolvimento que contextualize a dor e o benefício do carrossel sem entregar tudo de bandeja, usando espaçamentos limpos e emojis adequados.
+3. Crie uma Chamada para Ação (CTA) forte (ex: "Salve este post para consultar depois", "Comente [PALAVRA-CHAVE] que eu te envio o material", "Compartilhe com alguém que precisa ver isso").
+4. Gere de 15 a 20 hashtags estratégicas em português (mistura de nicho, dor e alcance).
+5. Sugira o texto do "Primeiro Comentário" para impulsionar a conversa e o algoritmo.
+
+Retorne EXCLUSIVAMENTE um objeto JSON no formato:
+{
+  "caption": "Texto completo da legenda aqui com quebras de linha \\n\\n",
+  "hashtags": ["#hashtag1", "#hashtag2", "#hashtag3"],
+  "firstComment": "Texto para você fixar no primeiro comentário..."
+}
+`;
+
+  try {
+    const raw = await callTextAi(prompt, 2500, true);
+    const parsed = robustJsonParse<PostCaptionResult>(raw, {
+      caption: `🔥 ${topic}\n\nArrasta para o lado e confira os segredos para dominar este tema passo a passo!\n\nSalva esse post para consultar depois! 📌\n\nQual desses pontos mais chamou sua atenção? Comenta aqui embaixo! 👇`,
+      hashtags: ['#carrossel', '#conteudo', '#instagram', '#dicas', '#estrategia', '#negocios', '#marketing'],
+      firstComment: `Qual desses passos você vai começar a aplicar hoje? Deixe nos comentários! 👇`
+    });
+
+    return parsed;
+  } catch (error) {
+    console.error("Erro ao gerar legenda:", error);
+    return {
+      caption: `🔥 ${topic}\n\nArrasta para o lado e confira todas as dicas que preparamos para você!\n\n💡 Salva esse post para não esquecer e compartilha com um amigo que precisa ver isso! 🚀`,
+      hashtags: ['#carrossel', '#instagram', '#dicas', '#conteudo', '#estrategia'],
+      firstComment: `Comente aqui o que você achou desse carrossel! 👇`
+    };
+  }
+}
+
+export interface HookVariation {
+  hook: string;
+  framework: string;
+  score: number;
+  reason: string;
+}
+
+/**
+ * 2. Otimizador de Ganchos e Capas (Hook Score & A/B Hooks)
+ */
+export async function generateHookVariations(
+  topic: string,
+  tone: string,
+  brandName: string,
+  currentTitle?: string
+): Promise<HookVariation[]> {
+  const prompt = `
+Você é um mestre em copywriting para redes sociais e psicologia de retenção.
+Gere exatamente 5 variações de títulos/ganchos altamente virais para o SLIDE 1 (Capa de Carrossel do Instagram).
+
+TEMA: "${topic}"
+TOM DE VOZ: "${tone}"
+MARCA: "${brandName}"
+${currentTitle ? `TÍTULO ATUAL: "${currentTitle}"` : ''}
+
+FRAMEWORKS OBRIGATÓRIOS:
+1. "Contraintuitivo / Choque": Desafia o senso comum ou quebra uma crença popular.
+2. "Alerta / Erro Fatal": Adverte sobre um erro que está custando dinheiro, tempo ou saúde.
+3. "Como Fazer / Atalho": Promessa clara e irresistível de execução simplificada.
+4. "Curiosidade / Segredo": Gera gap de curiosidade que força a pessoa a arrastar para o lado.
+5. "Transformação / Prova": Foca no resultado final tangível antes vs depois.
+
+REGRAS:
+- Textos em português (pt-BR).
+- Entre 6 e 12 palavras por gancho.
+- Dê uma nota de Retenção Estimada (score de 80 a 99).
+- Explique em 1 frase curta por que esse gancho funciona.
+
+Retorne EXCLUSIVAMENTE um array JSON:
+[
+  {
+    "hook": "Texto do gancho impactante",
+    "framework": "Contraintuitivo / Choque",
+    "score": 96,
+    "reason": "Quebra uma crença comum e gera curiosidade imediata."
+  }
+]
+`;
+
+  try {
+    const raw = await callTextAi(prompt, 1500, true);
+    const parsed = robustJsonParse<HookVariation[]>(raw);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed;
+    }
+  } catch (error) {
+    console.error("Erro ao gerar variações de ganchos:", error);
+  }
+
+  // Fallback de alta qualidade
+  return [
+    {
+      hook: `O que ninguém te conta sobre ${topic}`,
+      framework: "Curiosidade / Segredo",
+      score: 95,
+      reason: "Desperta o medo de ficar de fora e curiosidade por segredos."
+    },
+    {
+      hook: `O maior erro que você comete ao lidar com ${topic}`,
+      framework: "Alerta / Erro Fatal",
+      score: 93,
+      reason: "Gatilho de aversão à perda e urgência em corrigir uma falha."
+    },
+    {
+      hook: `Como dominar ${topic} sem perder tempo`,
+      framework: "Como Fazer / Atalho",
+      score: 90,
+      reason: "Promessa direta de simplicidade e velocidade."
+    },
+    {
+      hook: `Pare de tentar ${topic} do jeito tradicional`,
+      framework: "Contraintuitivo / Choque",
+      score: 96,
+      reason: "Interrompe o padrão do feed e propõe uma nova visão."
+    },
+    {
+      hook: `O passo a passo definitivo para transformar seu ${topic}`,
+      framework: "Transformação / Prova",
+      score: 89,
+      reason: "Promessa de autoridade e valor duradouro."
+    }
+  ];
+}
+
+/**
+ * 3. Micro-Ações de IA no Editor de Slide (Copilot de Texto)
+ */
+export async function refineSlideText(
+  currentText: string,
+  action: 'shorten' | 'provocative' | 'analogy' | 'simplify',
+  field: 'title' | 'content' = 'content'
+): Promise<string> {
+  const actionInstructions: Record<string, string> = {
+    shorten: "Encurte este texto para que fique mais direto e conciso, mantendo o impacto e eliminando palavras desnecessárias (máximo 15 palavras).",
+    provocative: "Reescreva este texto para que soe muito mais provocativo, firme e instigante, usando palavras fortes que prendem a atenção do leitor.",
+    analogy: "Adicione ou transforme este texto em uma analogia simples e visual da vida real que qualquer pessoa entenda instantaneamente.",
+    simplify: "Simplifique a linguagem eliminando termos difíceis ou jargões complexos, tornando a leitura rápida e acessível."
+  };
+
+  const prompt = `
+Você é um editor de texto e copywriter de carrosséis para Instagram.
+Ajuste o seguinte texto do ${field === 'title' ? 'Título' : 'Conteúdo'} de um slide:
+
+TEXTO ORIGINAL:
+"${currentText}"
+
+OBJETIVO DA AÇÃO:
+${actionInstructions[action]}
+
+REGRAS:
+- Retorne APENAS o texto reescrito pronto em português (pt-BR).
+- Não coloque aspas ao redor, nem explicações, nem notas adicionais.
+`;
+
+  try {
+    const raw = await callTextAi(prompt, 350, false);
+    return raw.replace(/^["']|["']$/g, '').trim();
+  } catch (error) {
+    console.error("Erro ao refinar texto:", error);
+    return currentText;
+  }
+}
+
+/**
+ * 1. Engenharia Reversa de Carrosséis Virais (Vision-to-Design)
+ */
+export async function analyzeAndCloneViralPost(
+  referenceImage: { data: string, mimeType: string },
+  newTopic: string,
+  tone: string,
+  brandName: string,
+  numSlides: number = 7,
+  includeImages: boolean = false
+): Promise<SlideData[]> {
+  const promptText = `
+Você é um diretor de arte e estrategista de conteúdo viral de elite no Instagram.
+Analise a imagem deste post/carrossel viral e faça a ENGENHARIA REVERSA completa da sua fórmula:
+1. Estrutura do Gancho (como a capa prende atenção, tamanho do título, tom e psicologia).
+2. Ritmo Narrativo (distribuição entre problema, revelação, passos e CTA).
+3. Densidade de texto e estilo de layout.
+
+Agora, gere um NOVO carrossel de exatamente ${numSlides} slides sobre o NOVO TEMA: "${newTopic}".
+- Tom de voz: "${tone}"
+- Nome da Marca: "${brandName}"
+- Aplique a mesma psicologia e ritmo vencedor do post de referência adaptado ao novo tema.
+
+Retorne EXCLUSIVAMENTE um array JSON de slides. Cada slide deve conter:
+- type: 'hero' | 'problem' | 'solution' | 'features' | 'details' | 'how-to' | 'cta'
+- layoutModel: 'default' | 'forbes' | 'twitter' | 'frases' | 'ranking' | 'antes_depois' | 'dado_contexto' | 'checklist' | 'depoimento' | 'passo_a_passo' | 'comparativo' | 'citacao_especialista' | 'problema' | 'solucao' | 'timeline'
+- background: 'light' | 'dark' | 'brand-gradient'
+- tag: Categoria curta em maiúsculas (máximo 2 palavras)
+- title: Título impactante do slide
+- content: Texto de corpo educativo
+${includeImages ? '- imageDescription: Descrição visual da imagem de apoio (em inglês)' : ''}
+- alignment: 'left' | 'center' | 'right'
+`;
+
+  try {
+    const customKey = localStorage.getItem('custom_gemini_key');
+    const customOpenRouterKey = localStorage.getItem('custom_openrouter_key');
+    const customProvider = localStorage.getItem('custom_ai_provider') || 'gemini';
+    const customModel = localStorage.getItem('custom_openrouter_model_custom')?.trim() || localStorage.getItem('custom_openrouter_model') || 'google/gemini-2.5-flash';
+
+    const isOpenRouter = customProvider === 'openrouter' || (customKey && customKey.startsWith('sk-or-')) || (customOpenRouterKey && customOpenRouterKey.startsWith('sk-or-'));
+    const apiKey = isOpenRouter 
+      ? (customOpenRouterKey || customKey || process.env.API_KEY || process.env.GEMINI_API_KEY || "DUMMY_KEY")
+      : (customKey || process.env.API_KEY || process.env.GEMINI_API_KEY || "DUMMY_KEY");
+
+    let rawText = '';
+
+    if (isOpenRouter) {
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: customModel,
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: promptText },
+                {
+                  type: "image_url",
+                  image_url: {
+                    url: `data:${referenceImage.mimeType};base64,${referenceImage.data}`
+                  }
+                }
+              ]
+            }
+          ],
+          response_format: { type: "json_object" },
+          max_tokens: 4000
+        })
+      });
+
+      if (!response.ok) {
+        const err = await response.text();
+        throw new Error(`OpenRouter clone viral error: ${response.status} - ${err}`);
+      }
+      const resJson = await response.json();
+      rawText = resJson.choices?.[0]?.message?.content || "";
+    } else {
+      const currentAi = new GoogleGenAI({ apiKey });
+      const parts = [
+        {
+          inlineData: {
+            data: referenceImage.data,
+            mimeType: referenceImage.mimeType
+          }
+        },
+        { text: promptText }
+      ];
+
+      const response = await currentAi.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: { parts },
+        config: {
+          maxOutputTokens: 8192,
+          temperature: 0.7,
+          responseMimeType: "application/json"
+        }
+      });
+      rawText = response.text || "";
+    }
+
+    const rawParsed = robustJsonParse<any>(rawText);
+    let slides: any[] = [];
+    if (Array.isArray(rawParsed)) {
+      slides = rawParsed;
+    } else if (rawParsed && typeof rawParsed === 'object') {
+      slides = rawParsed.slides || rawParsed.carousel || rawParsed.data || [rawParsed];
+    }
+
+    if (slides.length > 0) {
+      return slides.map((s: any) => ({
+        ...s,
+        id: Math.random().toString(36).substring(7)
+      }));
+    }
+  } catch (error) {
+    console.error("Erro ao clonar post viral:", error);
+  }
+
+  // Fallback seguro gerando carrossel regular
+  return generateCarouselContent(newTopic, numSlides, tone, brandName, includeImages);
+}
+
+/**
+ * 6. Repurposing de Conteúdo (Artigos, Roteiros e Transcrições em Carrossel)
+ */
+export async function generateFromLongContent(
+  longContent: string,
+  numSlides: number = 7,
+  tone: string = 'Profissional',
+  brandName: string = 'SuaMarca',
+  includeImages: boolean = false
+): Promise<SlideData[]> {
+  const prompt = `
+Você é um estrategista especialista em "Content Repurposing" (transformação de conteúdos longos em carrosséis virais de alto engajamento no Instagram).
+
+TEXTO ORIGINAL / TRANSCRIÇÃO / ARTIGO:
+"""
+${longContent}
+"""
+
+OBJETIVO:
+Destile e transforme o texto acima em um carrossel de exatamente ${numSlides} slides com arco narrativo claro:
+- Nome da Marca: "${brandName}"
+- Tom de voz: "${tone}"
+1. Slide 1 (Hero / Gancho): Frase de alto impacto que resume a grande promessa ou revelação do texto.
+2. Slides Intermediários: Os conceitos-chave, passos práticos, dados ou lições mais valiosas (evite blocos gigantes de texto; sintetize em ideias fáceis de digerir).
+3. Slide Final (CTA): Resumo e chamada para ação para seguir ou salvar.
+
+ESPECIFICAÇÕES DOS SLIDES:
+- Retorne EXCLUSIVAMENTE um array JSON com ${numSlides} slides.
+- type: 'hero' | 'problem' | 'solution' | 'features' | 'details' | 'how-to' | 'cta'
+- layoutModel: 'default' | 'forbes' | 'twitter' | 'ranking' | 'antes_depois' | 'dado_contexto' | 'checklist' | 'passo_a_passo' | 'timeline'
+- background: 'light' | 'dark' | 'brand-gradient'
+- tag: Categoria curta (máximo 2 palavras)
+- title: Título conciso do slide
+- content: Conteúdo essencial resumido (máximo 120 caracteres)
+${includeImages ? '- imageDescription: Prompt de imagem conceitual em inglês' : ''}
+- alignment: 'left' | 'center' | 'right'
+`;
+
+  const rawText = await callTextAi(prompt, 4000, true);
+  const rawParsed = robustJsonParse<any>(rawText);
+  let slides: any[] = [];
+  if (Array.isArray(rawParsed)) {
+    slides = rawParsed;
+  } else if (rawParsed && typeof rawParsed === 'object') {
+    slides = rawParsed.slides || rawParsed.carousel || rawParsed.data || [rawParsed];
+  }
+
+  if (slides.length > 0) {
+    return slides.map((s: any) => ({
+      ...s,
+      id: Math.random().toString(36).substring(7)
+    }));
+  }
+
+  throw new Error("Não foi possível sintetizar o texto longo em slides.");
+}

@@ -1,13 +1,52 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { generatePalette, FONT_PAIRINGS, loadAllGoogleFonts } from '../lib/colors';
-import { generateCarouselContent, generateImage, buildCinematicImagePrompt, analyzeCreativeReference, analyzePhotoQuietZone, SlideData } from '../lib/gemini';
+import { 
+  generateCarouselContent, 
+  generateImage, 
+  buildCinematicImagePrompt, 
+  analyzeCreativeReference, 
+  analyzePhotoQuietZone, 
+  SlideData,
+  generatePostCaption,
+  PostCaptionResult,
+  generateHookVariations,
+  HookVariation,
+  analyzeAndCloneViralPost,
+  generateFromLongContent
+} from '../lib/gemini';
 import { CarouselPreview } from '../components/CarouselPreview';
 import { SlideEditor } from '../components/SlideEditor';
 import { toPng } from 'html-to-image';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
-import { Loader2, Download, Wand2, Image as ImageIcon, Upload, Key, ArrowLeft, Settings, LayoutGrid, Edit3, ChevronDown, ChevronRight, X, Bookmark, Plus, Trash2 } from 'lucide-react';
+import { 
+  Loader2, 
+  Download, 
+  Wand2, 
+  Image as ImageIcon, 
+  Upload, 
+  Key, 
+  ArrowLeft, 
+  Settings, 
+  LayoutGrid, 
+  Edit3, 
+  ChevronDown, 
+  ChevronRight, 
+  X, 
+  Bookmark, 
+  Plus, 
+  Trash2,
+  Sparkles,
+  MessageSquare,
+  Copy,
+  Check,
+  FileText,
+  Flame,
+  Zap,
+  Lightbulb,
+  RefreshCw
+} from 'lucide-react';
 import { CarouselHistoryItem } from './Dashboard';
 import { get, set } from 'idb-keyval';
 import { db } from '../lib/firebase';
@@ -68,6 +107,25 @@ export default function GeneratorPage() {
   const [includeImages, setIncludeImages] = useState(false);
   const [isSeamless, setIsSeamless] = useState(false);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+
+  // Modos de Criação Inovadores
+  const [creationMode, setCreationMode] = useState<'topic' | 'clone_viral' | 'repurpose'>('topic');
+  const [viralReferenceImage, setViralReferenceImage] = useState<{data: string, mimeType: string, url: string} | null>(null);
+  const [longContentText, setLongContentText] = useState('');
+  const viralReferenceInputRef = useRef<HTMLInputElement>(null);
+
+  // Modal Otimizador de Ganchos (Hook Score)
+  const [showHookOptimizer, setShowHookOptimizer] = useState(false);
+  const [hookVariations, setHookVariations] = useState<HookVariation[]>([]);
+  const [isLoadingHooks, setIsLoadingHooks] = useState(false);
+
+  // Modal Gerador de Legenda e Hashtags
+  const [showCaptionModal, setShowCaptionModal] = useState(false);
+  const [postCaptionData, setPostCaptionData] = useState<PostCaptionResult | null>(null);
+  const [isLoadingCaption, setIsLoadingCaption] = useState(false);
+  const [copiedCaption, setCopiedCaption] = useState(false);
+  const [copiedHashtags, setCopiedHashtags] = useState(false);
+  const [copiedComment, setCopiedComment] = useState(false);
   const [referenceImage, setReferenceImage] = useState<{data: string, mimeType: string, url: string} | null>(null);
   const [creativeReference, setCreativeReference] = useState<{data: string, mimeType: string, url: string} | null>(null);
   const [creativeStylePrompt, setCreativeStylePrompt] = useState<string>('');
@@ -102,12 +160,12 @@ export default function GeneratorPage() {
 
   // Debounce saving to history to prevent lag
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const saveToHistoryDebounced = (generatedSlides: SlideData[]) => {
+  const saveToHistoryDebounced = useCallback((generatedSlides: SlideData[]) => {
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(() => {
       saveToHistory(generatedSlides);
-    }, 1000);
-  };
+    }, 1500);
+  }, []);
 
   // Collapsible sections
   const [openSections, setOpenSections] = useState({
@@ -126,8 +184,8 @@ export default function GeneratorPage() {
   const creativeReferenceInputRef = useRef<HTMLInputElement>(null);
   const clientPhotosInputRef = useRef<HTMLInputElement>(null);
 
-  const palette = generatePalette(primaryColor, secondaryColor, accentColor, darkBgColor, lightBgColor);
-  const selectedFonts = FONT_PAIRINGS[fontPairingIndex];
+  const palette = useMemo(() => generatePalette(primaryColor, secondaryColor, accentColor, darkBgColor, lightBgColor), [primaryColor, secondaryColor, accentColor, darkBgColor, lightBgColor]);
+  const selectedFonts = useMemo(() => FONT_PAIRINGS[fontPairingIndex] || FONT_PAIRINGS[0], [fontPairingIndex]);
 
   useEffect(() => {
     get('carousel_palettes').then((data) => {
@@ -295,6 +353,83 @@ export default function GeneratorPage() {
     }
   };
 
+  const handleViralReferenceUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64String = reader.result as string;
+      const base64Data = base64String.split(',')[1];
+      setViralReferenceImage({
+        data: base64Data,
+        mimeType: file.type,
+        url: URL.createObjectURL(file)
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleOpenHookOptimizer = async () => {
+    setShowHookOptimizer(true);
+    if (hookVariations.length === 0) {
+      setIsLoadingHooks(true);
+      try {
+        const activeTopic = topic.trim() || slides[0]?.title || 'Como alcançar resultados extraordinários';
+        const currentTitle = slides[0]?.title || '';
+        const variations = await generateHookVariations(activeTopic, tone, brandName, currentTitle);
+        setHookVariations(variations);
+      } catch (err) {
+        console.error("Erro ao gerar variações de ganchos:", err);
+      } finally {
+        setIsLoadingHooks(false);
+      }
+    }
+  };
+
+  const handleApplyHook = (hookText: string) => {
+    if (slides.length > 0) {
+      const updated = [...slides];
+      updated[0] = {
+        ...updated[0],
+        title: hookText
+      };
+      setSlides(updated);
+      saveToHistory(updated);
+      setShowHookOptimizer(false);
+    }
+  };
+
+  const handleOpenCaptionModal = async () => {
+    setShowCaptionModal(true);
+    if (!postCaptionData && slides.length > 0) {
+      setIsLoadingCaption(true);
+      try {
+        const activeTopic = topic.trim() || slides[0]?.title || 'Carrossel';
+        const result = await generatePostCaption(activeTopic, slides, brandName, tone);
+        setPostCaptionData(result);
+      } catch (err) {
+        console.error("Erro ao gerar legenda:", err);
+      } finally {
+        setIsLoadingCaption(false);
+      }
+    }
+  };
+
+  const handleRegenerateCaption = async () => {
+    if (slides.length === 0) return;
+    setIsLoadingCaption(true);
+    try {
+      const activeTopic = topic.trim() || slides[0]?.title || 'Carrossel';
+      const result = await generatePostCaption(activeTopic, slides, brandName, tone);
+      setPostCaptionData(result);
+    } catch (err) {
+      console.error("Erro ao regenerar legenda:", err);
+    } finally {
+      setIsLoadingCaption(false);
+    }
+  };
+
   const handleReferenceImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -398,10 +533,21 @@ export default function GeneratorPage() {
       setTopic(activeTopic);
     }
 
-    if (!activeTopic) {
+    if (creationMode === 'clone_viral' && !viralReferenceImage) {
+      setErrorMessage('Por favor, envie um print ou imagem do post viral para a IA clonar.');
+      return;
+    }
+
+    if (creationMode === 'repurpose' && !longContentText.trim()) {
+      setErrorMessage('Por favor, cole o texto longo, artigo ou transcrição de vídeo.');
+      return;
+    }
+
+    if (creationMode === 'topic' && !activeTopic) {
       setErrorMessage('Por favor, insira um tópico ou ideia.');
       return;
     }
+
     setErrorMessage(null);
     setIsGenerating(true);
     setProgress(0);
@@ -429,22 +575,49 @@ export default function GeneratorPage() {
     }, 500);
 
     try {
-      let finalSlides = await generateCarouselContent(
-        activeTopic,
-        numSlides,
-        tone,
-        brandName,
-        includeImages,
-        !!referenceImage,
-        isSeamless,
-        generationLayout,
-        phraseCategory,
-        customPhrases
-      );
+      let finalSlides: SlideData[];
+
+      if (creationMode === 'clone_viral' && viralReferenceImage) {
+        setProgressText('Analisando post viral e clonando estrutura...');
+        finalSlides = await analyzeAndCloneViralPost(
+          viralReferenceImage,
+          activeTopic || 'Como dominar este tema',
+          tone,
+          brandName,
+          numSlides,
+          includeImages
+        );
+      } else if (creationMode === 'repurpose' && longContentText.trim()) {
+        setProgressText('Destilando e sintetizando texto longo...');
+        finalSlides = await generateFromLongContent(
+          longContentText,
+          numSlides,
+          tone,
+          brandName,
+          includeImages
+        );
+      } else {
+        finalSlides = await generateCarouselContent(
+          activeTopic,
+          numSlides,
+          tone,
+          brandName,
+          includeImages,
+          !!referenceImage,
+          isSeamless,
+          generationLayout,
+          phraseCategory,
+          customPhrases
+        );
+      }
       
       // Mostrar os slides imediatamente com o texto
       setSlides([...finalSlides]);
       setCurrentIndex(0);
+      
+      // Limpa dados de legenda anteriores para gerar novos quando solicitado
+      setPostCaptionData(null);
+      setHookVariations([]);
       
       let hasImageErrors = false;
       let lastImageError: string | null = null;
@@ -849,11 +1022,13 @@ export default function GeneratorPage() {
     }
   };
 
-  const updateSlide = (updatedSlide: SlideData) => {
-    const newSlides = slides.map(s => s.id === updatedSlide.id ? updatedSlide : s);
-    setSlides(newSlides);
-    saveToHistoryDebounced(newSlides);
-  };
+  const updateSlide = useCallback((updatedSlide: SlideData) => {
+    setSlides(prevSlides => {
+      const newSlides = prevSlides.map(s => s.id === updatedSlide.id ? updatedSlide : s);
+      saveToHistoryDebounced(newSlides);
+      return newSlides;
+    });
+  }, [saveToHistoryDebounced]);
 
   const handleRegenerateImage = async (slideId: string, prompt: string) => {
     try {
@@ -900,14 +1075,147 @@ export default function GeneratorPage() {
         {openSections.content && (
           <div className="p-4 flex flex-col gap-4 border-t border-[rgba(255,255,255,0.06)]">
             {location.state?.mode !== 'manual' && (
-              <div className="flex flex-col gap-2">
-                <label className="text-xs font-medium text-[rgba(240,240,240,0.6)]">Tópico / Ideia</label>
-                <textarea 
-                  value={topic}
-                  onChange={(e) => setTopic(e.target.value)}
-                  placeholder="Ex: 5 passos para criar uma marca inesquecível..."
-                  className="w-full p-3 bg-[#0A0A0A] border border-[rgba(255,255,255,0.1)] rounded-lg text-sm min-h-[100px] focus:border-[#6C63FF] outline-none text-white placeholder:text-[rgba(255,255,255,0.2)] transition-colors"
-                />
+              <div className="flex flex-col gap-3">
+                {/* Seletor de Modo de Criação */}
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-semibold text-[rgba(240,240,240,0.6)] uppercase tracking-wider flex items-center gap-1">
+                    <Sparkles size={13} className="text-[#6C63FF]" /> Modo de Criação
+                  </label>
+                  <div className="grid grid-cols-3 gap-1.5 p-1 bg-[#0A0A0A] border border-[rgba(255,255,255,0.08)] rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => setCreationMode('topic')}
+                      className={`py-2 px-1 rounded-lg text-xs font-semibold transition-all flex flex-col items-center gap-1 cursor-pointer ${
+                        creationMode === 'topic'
+                          ? 'bg-[#6C63FF] text-white shadow-[0_0_10px_rgba(108,99,255,0.3)]'
+                          : 'text-[rgba(240,240,240,0.6)] hover:text-white'
+                      }`}
+                    >
+                      <Lightbulb size={14} />
+                      <span>Tema</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCreationMode('clone_viral')}
+                      className={`py-2 px-1 rounded-lg text-xs font-semibold transition-all flex flex-col items-center gap-1 cursor-pointer ${
+                        creationMode === 'clone_viral'
+                          ? 'bg-gradient-to-r from-[#6C63FF] to-[#FF6584] text-white shadow-[0_0_10px_rgba(255,101,132,0.3)]'
+                          : 'text-[rgba(240,240,240,0.6)] hover:text-white'
+                      }`}
+                    >
+                      <ImageIcon size={14} />
+                      <span>Clonar Post</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCreationMode('repurpose')}
+                      className={`py-2 px-1 rounded-lg text-xs font-semibold transition-all flex flex-col items-center gap-1 cursor-pointer ${
+                        creationMode === 'repurpose'
+                          ? 'bg-[#6C63FF] text-white shadow-[0_0_10px_rgba(108,99,255,0.3)]'
+                          : 'text-[rgba(240,240,240,0.6)] hover:text-white'
+                      }`}
+                    >
+                      <FileText size={14} />
+                      <span>Repurpose</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Conteúdo específico por modo */}
+                {creationMode === 'topic' && (
+                  <div className="flex flex-col gap-2 animate-fade-in">
+                    <label className="text-xs font-medium text-[rgba(240,240,240,0.6)]">Tópico / Ideia</label>
+                    <textarea 
+                      value={topic}
+                      onChange={(e) => setTopic(e.target.value)}
+                      placeholder="Ex: 5 passos para criar uma marca inesquecível..."
+                      className="w-full p-3 bg-[#0A0A0A] border border-[rgba(255,255,255,0.1)] rounded-lg text-sm min-h-[90px] focus:border-[#6C63FF] outline-none text-white placeholder:text-[rgba(255,255,255,0.2)] transition-colors"
+                    />
+                  </div>
+                )}
+
+                {creationMode === 'clone_viral' && (
+                  <div className="flex flex-col gap-3 p-3 bg-[#0A0A0A] border border-[#6C63FF]/30 rounded-xl animate-fade-in">
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs font-semibold text-white flex items-center justify-between">
+                        <span>1. Print do Post Viral</span>
+                        <span className="text-[10px] text-[#6C63FF] font-bold">Vision AI</span>
+                      </label>
+                      <p className="text-[10px] text-[rgba(240,240,240,0.5)]">
+                        Envie o print de um carrossel que viralizou. A IA clonará a fórmula vencedora.
+                      </p>
+                      
+                      <div className="mt-1 flex items-center gap-3">
+                        {viralReferenceImage ? (
+                          <div className="relative w-16 h-20 rounded-lg overflow-hidden border border-[#6C63FF] shrink-0">
+                            <img src={viralReferenceImage.url} alt="Referência Viral" className="w-full h-full object-cover" />
+                            <button
+                              type="button"
+                              onClick={() => setViralReferenceImage(null)}
+                              className="absolute inset-0 bg-black/60 text-white flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity text-xs cursor-pointer font-bold"
+                            >
+                              X
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => viralReferenceInputRef.current?.click()}
+                            className="flex-1 py-3 px-2 border-2 border-dashed border-[#6C63FF]/40 hover:border-[#6C63FF] bg-[#6C63FF]/5 hover:bg-[#6C63FF]/10 rounded-xl flex flex-col items-center justify-center text-xs text-white gap-1.5 transition-all cursor-pointer"
+                          >
+                            <Upload size={16} className="text-[#6C63FF]" />
+                            <span className="font-semibold">Fazer Upload do Print</span>
+                            <span className="text-[10px] text-[rgba(240,240,240,0.4)]">JPG, PNG ou WebP</span>
+                          </button>
+                        )}
+                        <input 
+                          type="file" 
+                          ref={viralReferenceInputRef} 
+                          onChange={handleViralReferenceUpload} 
+                          accept="image/*" 
+                          className="hidden" 
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-1 pt-2 border-t border-[rgba(255,255,255,0.06)]">
+                      <label className="text-xs font-semibold text-white">2. Seu Novo Tema / Nicho</label>
+                      <input
+                        type="text"
+                        value={topic}
+                        onChange={(e) => setTopic(e.target.value)}
+                        placeholder="Ex: Produtividade para médicos, Finanças para iniciantes..."
+                        className="w-full p-2.5 bg-[#111111] border border-[rgba(255,255,255,0.1)] rounded-lg text-xs text-white focus:border-[#6C63FF] outline-none"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {creationMode === 'repurpose' && (
+                  <div className="flex flex-col gap-2 p-3 bg-[#0A0A0A] border border-[#6C63FF]/30 rounded-xl animate-fade-in">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold text-white flex items-center gap-1">
+                        <FileText size={13} className="text-[#6C63FF]" /> Texto Longo / Transcrição
+                      </label>
+                      <span className="text-[10px] text-[#6C63FF] font-bold">Destilação IA</span>
+                    </div>
+                    <p className="text-[10px] text-[rgba(240,240,240,0.5)]">
+                      Cole um artigo, roteiro de vídeo do YouTube ou anotação para transformar em carrossel.
+                    </p>
+                    <textarea 
+                      value={longContentText}
+                      onChange={(e) => {
+                        setLongContentText(e.target.value);
+                        if (!topic.trim()) {
+                          const firstLine = e.target.value.split('\n')[0].substring(0, 40);
+                          setTopic(firstLine);
+                        }
+                      }}
+                      placeholder="Cole aqui o artigo, transcrição de vídeo ou notas completas..."
+                      className="w-full p-3 bg-[#111111] border border-[rgba(255,255,255,0.1)] rounded-lg text-xs min-h-[120px] focus:border-[#6C63FF] outline-none text-white placeholder:text-[rgba(255,255,255,0.2)]"
+                    />
+                  </div>
+                )}
               </div>
             )}
 
@@ -1872,14 +2180,37 @@ export default function GeneratorPage() {
           Gerador
         </h1>
         
-        <button 
-          onClick={handleExport}
-          disabled={slides.length === 0 || isExporting}
-          className="flex items-center gap-2 px-3 py-1.5 md:px-4 md:py-2 bg-[#161616] border border-[rgba(255,255,255,0.1)] text-white rounded-lg font-medium disabled:opacity-50 hover:bg-[rgba(255,255,255,0.05)] transition-colors"
-        >
-          {isExporting ? <Loader2 className="animate-spin" size={18} /> : <Download size={18} />}
-          <span className="hidden md:inline">Exportar ZIP</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {slides.length > 0 && (
+            <>
+              <button 
+                onClick={handleOpenHookOptimizer}
+                className="flex items-center gap-1.5 px-3 py-1.5 md:px-3.5 md:py-2 bg-[rgba(108,99,255,0.12)] border border-[rgba(108,99,255,0.3)] text-[#6C63FF] hover:bg-[rgba(108,99,255,0.22)] rounded-lg font-medium transition-colors text-xs md:text-sm cursor-pointer shadow-[0_0_10px_rgba(108,99,255,0.15)]"
+                title="Gerar 5 variações estratégicas de capa para o Slide 1"
+              >
+                <Sparkles size={15} />
+                <span className="hidden sm:inline">Ganchos / Capa</span>
+              </button>
+              <button 
+                onClick={handleOpenCaptionModal}
+                className="flex items-center gap-1.5 px-3 py-1.5 md:px-3.5 md:py-2 bg-gradient-to-r from-[#6C63FF]/20 to-[#FF6584]/20 border border-[#6C63FF]/40 text-white hover:border-[#6C63FF] rounded-lg font-medium transition-colors text-xs md:text-sm cursor-pointer shadow-[0_0_10px_rgba(255,101,132,0.15)]"
+                title="Gerar legenda formatada com hashtags para o Instagram"
+              >
+                <MessageSquare size={15} className="text-[#FF6584]" />
+                <span className="hidden sm:inline">Legenda + Hashtags</span>
+              </button>
+            </>
+          )}
+
+          <button 
+            onClick={handleExport}
+            disabled={slides.length === 0 || isExporting}
+            className="flex items-center gap-2 px-3 py-1.5 md:px-4 md:py-2 bg-[#161616] border border-[rgba(255,255,255,0.1)] text-white rounded-lg font-medium disabled:opacity-50 hover:bg-[rgba(255,255,255,0.05)] transition-colors"
+          >
+            {isExporting ? <Loader2 className="animate-spin" size={18} /> : <Download size={18} />}
+            <span className="hidden md:inline">Exportar ZIP</span>
+          </button>
+        </div>
       </header>
 
       <main className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
@@ -2055,20 +2386,242 @@ export default function GeneratorPage() {
         </div>
       )}
 
+      {/* Modal Otimizador de Ganchos / Capas */}
+      {showHookOptimizer && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+          <div className="w-full max-w-2xl bg-[#111111] border border-[rgba(255,255,255,0.12)] rounded-2xl p-6 flex flex-col shadow-2xl animate-fade-in max-h-[90vh] overflow-hidden">
+            <div className="flex justify-between items-center pb-4 border-b border-[rgba(255,255,255,0.08)]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#6C63FF] to-[#FF6584] flex items-center justify-center text-white shrink-0">
+                  <Sparkles size={18} />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold font-['Syne'] text-white">Otimizador de Ganchos (Capa)</h2>
+                  <p className="text-xs text-[rgba(240,240,240,0.6)]">5 variações estratégicas com pontuação de retenção para o Slide 1</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowHookOptimizer(false)} 
+                className="p-1.5 hover:bg-[rgba(255,255,255,0.1)] rounded-lg text-[rgba(240,240,240,0.6)] hover:text-white transition-colors cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="py-4 overflow-y-auto flex-1 flex flex-col gap-3 pr-1">
+              {isLoadingHooks ? (
+                <div className="py-12 flex flex-col items-center justify-center gap-3 text-center">
+                  <Loader2 className="animate-spin text-[#6C63FF]" size={32} />
+                  <p className="text-sm font-['Syne'] text-white">Criando ganchos de alta conversão...</p>
+                  <p className="text-xs text-[rgba(240,240,240,0.5)]">Aplicando psicologia de retenção e frameworks virais</p>
+                </div>
+              ) : hookVariations.length === 0 ? (
+                <div className="py-8 text-center text-sm text-[rgba(240,240,240,0.5)]">
+                  Nenhum gancho gerado ainda.
+                </div>
+              ) : (
+                hookVariations.map((item, idx) => (
+                  <div 
+                    key={idx} 
+                    className="p-4 bg-[#161616] border border-[rgba(255,255,255,0.06)] hover:border-[#6C63FF]/50 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-all group"
+                  >
+                    <div className="flex-1 flex flex-col gap-1.5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-[#6C63FF]/15 text-[#6C63FF] border border-[#6C63FF]/30">
+                          {item.framework}
+                        </span>
+                        <span className="text-[11px] font-bold text-emerald-400 flex items-center gap-1">
+                          <Flame size={12} /> Score: {item.score}%
+                        </span>
+                      </div>
+                      <p className="text-sm font-semibold text-white group-hover:text-[#6C63FF] transition-colors">
+                        "{item.hook}"
+                      </p>
+                      <p className="text-[11px] text-[rgba(240,240,240,0.5)] leading-tight">
+                        💡 {item.reason}
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={() => handleApplyHook(item.hook)}
+                      className="px-3.5 py-2 bg-[#6C63FF] hover:bg-[#5b54d6] text-white text-xs font-semibold rounded-lg transition-all shrink-0 flex items-center justify-center gap-1.5 shadow-[0_0_12px_rgba(108,99,255,0.3)] cursor-pointer"
+                    >
+                      <Check size={14} /> Aplicar na Capa
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="pt-3 border-t border-[rgba(255,255,255,0.08)] flex justify-between items-center">
+              <span className="text-xs text-[rgba(240,240,240,0.5)] truncate max-w-[60%]">
+                {slides.length > 0 ? `Slide 1: "${slides[0]?.title?.replace(/<[^>]*>/g, '')}"` : ''}
+              </span>
+              <button
+                disabled={isLoadingHooks}
+                onClick={async () => {
+                  setIsLoadingHooks(true);
+                  try {
+                    const activeTopic = topic.trim() || slides[0]?.title || 'Como alcançar resultados extraordinários';
+                    const currentTitle = slides[0]?.title || '';
+                    const variations = await generateHookVariations(activeTopic, tone, brandName, currentTitle);
+                    setHookVariations(variations);
+                  } catch (e) {
+                    console.error(e);
+                  } finally {
+                    setIsLoadingHooks(false);
+                  }
+                }}
+                className="px-3 py-1.5 bg-[#161616] border border-[rgba(255,255,255,0.1)] hover:bg-[rgba(255,255,255,0.05)] text-white text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw size={12} className={isLoadingHooks ? 'animate-spin' : ''} />
+                Novas Sugestões
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Legenda do Post + Hashtags */}
+      {showCaptionModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+          <div className="w-full max-w-3xl bg-[#111111] border border-[rgba(255,255,255,0.12)] rounded-2xl p-6 flex flex-col shadow-2xl animate-fade-in max-h-[90vh] overflow-hidden">
+            <div className="flex justify-between items-center pb-4 border-b border-[rgba(255,255,255,0.08)]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#FF6584] to-[#6C63FF] flex items-center justify-center text-white shrink-0">
+                  <MessageSquare size={18} />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold font-['Syne'] text-white">Legenda & Hashtags para Instagram</h2>
+                  <p className="text-xs text-[rgba(240,240,240,0.6)]">Pronta para copiar e colar com espaçamentos otimizados</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowCaptionModal(false)} 
+                className="p-1.5 hover:bg-[rgba(255,255,255,0.1)] rounded-lg text-[rgba(240,240,240,0.6)] hover:text-white transition-colors cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="py-4 overflow-y-auto flex-1 flex flex-col gap-4 pr-1">
+              {isLoadingCaption ? (
+                <div className="py-16 flex flex-col items-center justify-center gap-3 text-center">
+                  <Loader2 className="animate-spin text-[#FF6584]" size={32} />
+                  <p className="text-sm font-['Syne'] text-white">Escrevendo legenda persuasiva e selecionando hashtags...</p>
+                  <p className="text-xs text-[rgba(240,240,240,0.5)]">Sintetizando os ganchos e CTAs do carrossel</p>
+                </div>
+              ) : postCaptionData ? (
+                <>
+                  {/* Bloco Legenda */}
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                        <FileText size={14} className="text-[#6C63FF]" /> Legenda do Post
+                      </label>
+                      <button
+                        onClick={() => {
+                          const fullText = `${postCaptionData.caption}\n\n.\n.\n${postCaptionData.hashtags.join(' ')}`;
+                          navigator.clipboard.writeText(fullText);
+                          setCopiedCaption(true);
+                          setTimeout(() => setCopiedCaption(false), 2000);
+                        }}
+                        className="px-3 py-1 bg-[#6C63FF] hover:bg-[#5b54d6] text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-all shadow-[0_0_10px_rgba(108,99,255,0.3)] cursor-pointer"
+                      >
+                        {copiedCaption ? <Check size={14} className="text-emerald-300" /> : <Copy size={14} />}
+                        {copiedCaption ? 'Copiado!' : 'Copiar Tudo'}
+                      </button>
+                    </div>
+                    <textarea 
+                      readOnly
+                      value={postCaptionData.caption}
+                      className="w-full p-3.5 bg-[#0A0A0A] border border-[rgba(255,255,255,0.1)] rounded-xl text-sm text-[rgba(240,240,240,0.9)] min-h-[160px] font-sans leading-relaxed focus:outline-none select-all"
+                    />
+                  </div>
+
+                  {/* Bloco Hashtags */}
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                        <Sparkles size={14} className="text-[#FF6584]" /> Hashtags Estratégicas ({postCaptionData.hashtags.length})
+                      </label>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(postCaptionData.hashtags.join(' '));
+                          setCopiedHashtags(true);
+                          setTimeout(() => setCopiedHashtags(false), 2000);
+                        }}
+                        className="px-2.5 py-1 bg-[rgba(255,255,255,0.06)] hover:bg-[rgba(255,255,255,0.12)] border border-[rgba(255,255,255,0.1)] text-white text-xs rounded-lg flex items-center gap-1 transition-all cursor-pointer"
+                      >
+                        {copiedHashtags ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                        {copiedHashtags ? 'Copiadas!' : 'Copiar Hashtags'}
+                      </button>
+                    </div>
+                    <div className="p-3 bg-[#0A0A0A] border border-[rgba(255,255,255,0.08)] rounded-xl flex flex-wrap gap-1.5">
+                      {postCaptionData.hashtags.map((tag, tIdx) => (
+                        <span key={tIdx} className="text-xs px-2 py-0.5 rounded-md bg-[rgba(108,99,255,0.1)] text-[#6C63FF] border border-[rgba(108,99,255,0.2)]">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Bloco Primeiro Comentário */}
+                  {postCaptionData.firstComment && (
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                          <MessageSquare size={14} className="text-amber-400" /> Primeiro Comentário (Engajamento)
+                        </label>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(postCaptionData.firstComment);
+                            setCopiedComment(true);
+                            setTimeout(() => setCopiedComment(false), 2000);
+                          }}
+                          className="px-2.5 py-1 bg-[rgba(255,255,255,0.06)] hover:bg-[rgba(255,255,255,0.12)] border border-[rgba(255,255,255,0.1)] text-white text-xs rounded-lg flex items-center gap-1 transition-all cursor-pointer"
+                        >
+                          {copiedComment ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                          {copiedComment ? 'Copiado!' : 'Copiar'}
+                        </button>
+                      </div>
+                      <div className="p-3 bg-[#0A0A0A] border border-[rgba(255,255,255,0.08)] rounded-xl text-xs text-[rgba(240,240,240,0.8)]">
+                        {postCaptionData.firstComment}
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : null}
+            </div>
+
+            <div className="pt-3 border-t border-[rgba(255,255,255,0.08)] flex justify-end">
+              <button
+                disabled={isLoadingCaption}
+                onClick={handleRegenerateCaption}
+                className="px-3.5 py-2 bg-[#161616] border border-[rgba(255,255,255,0.1)] hover:bg-[rgba(255,255,255,0.05)] text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw size={14} className={isLoadingCaption ? 'animate-spin' : ''} />
+                Regenerar Legenda
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Hidden file inputs for references (always mounted to avoid unmounted ref errors) */}
       <input 
         type="file" 
-        ref={referenceImageInputRef}
-        onChange={handleReferenceImageUpload}
-        accept="image/*"
-        className="hidden"
+        ref={referenceImageInputRef} 
+        onChange={handleReferenceImageUpload} 
+        accept="image/*" 
+        className="hidden" 
       />
       <input 
         type="file" 
-        ref={creativeReferenceInputRef}
-        onChange={handleCreativeReferenceUpload}
-        accept="image/*"
-        className="hidden"
+        ref={creativeReferenceInputRef} 
+        onChange={handleCreativeReferenceUpload} 
+        accept="image/*" 
+        className="hidden" 
       />
     </div>
   );

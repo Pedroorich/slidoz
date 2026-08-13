@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, memo } from 'react';
 import { SlideData } from '../lib/gemini';
 import { Heart, MessageCircle, Send, Bookmark } from 'lucide-react';
 import { colord } from 'colord';
@@ -17,7 +17,7 @@ interface CarouselPreviewProps {
   format?: 'portrait' | 'square' | 'stories';
 }
 
-export function CarouselPreview({
+export const CarouselPreview = memo(function CarouselPreview({
   slides,
   palette,
   brandName,
@@ -74,9 +74,9 @@ export function CarouselPreview({
       )}
     </div>
   );
-}
+});
 
-function Slide({ slide, slides = [], index, total, palette, brandName, handle, logoUrl, headingFont, bodyFont, prevSlide, format = 'portrait' }: any) {
+const Slide = memo(function Slide({ slide, slides = [], index, total, palette, brandName, handle, logoUrl, headingFont, bodyFont, prevSlide, format = 'portrait' }: any) {
   const isLight = slide.background === 'light';
   const isGradient = slide.background === 'brand-gradient';
   const hasBgImage = !!slide.backgroundImage;
@@ -1649,4 +1649,4 @@ function Slide({ slide, slides = [], index, total, palette, brandName, handle, l
       )}
     </div>
   );
-}
+});

@@ -58,3 +58,44 @@ body {
   background-size: 1000px 100%;
   animation: shimmer 2s infinite;
 }
+
+/* Fix para reset de input[type="color"] evitando a caixa branca nativa do Chrome/Edge/Windows */
+input[type="color"] {
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  appearance: none !important;
+  background-color: transparent !important;
+  border: none !important;
+  outline: none !important;
+  padding: 0 !important;
+  cursor: pointer;
+}
+
+input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0 !important;
+  border-radius: 4px;
+  background-color: transparent !important;
+}
+
+input[type="color"]::-webkit-color-swatch {
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  border-radius: 4px;
+}
+
+input[type="color"]::-moz-color-swatch {
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  border-radius: 4px;
+}
+
+/* Garantia para seleções e opções em modo escuro */
+select option {
+  background-color: #111111 !important;
+  color: #ffffff !important;
+}
+
+/* Contenteditable sem fundo branco ao colar textos externos */
+[contenteditable] {
+  outline: none;
+  background-color: transparent;
+  color: inherit;
+}
