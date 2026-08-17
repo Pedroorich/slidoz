@@ -45,7 +45,8 @@ import {
   Flame,
   Zap,
   Lightbulb,
-  RefreshCw
+  RefreshCw,
+  User
 } from 'lucide-react';
 import { CarouselHistoryItem } from './Dashboard';
 import { get, set } from 'idb-keyval';
@@ -107,6 +108,8 @@ export default function GeneratorPage() {
   const [includeImages, setIncludeImages] = useState(false);
   const [isSeamless, setIsSeamless] = useState(false);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [brandAvatar, setBrandAvatar] = useState<{data: string, mimeType: string, url: string} | null>(null);
+  const [useBrandAvatar, setUseBrandAvatar] = useState<boolean>(true);
 
   // Modos de Criação Inovadores
   const [creationMode, setCreationMode] = useState<'topic' | 'clone_viral' | 'repurpose'>('topic');
@@ -183,6 +186,24 @@ export default function GeneratorPage() {
   const referenceImageInputRef = useRef<HTMLInputElement>(null);
   const creativeReferenceInputRef = useRef<HTMLInputElement>(null);
   const clientPhotosInputRef = useRef<HTMLInputElement>(null);
+  const brandAvatarInputRef = useRef<HTMLInputElement>(null);
+
+  const handleBrandAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64String = (reader.result as string).split(',')[1];
+        setBrandAvatar({
+          data: base64String,
+          mimeType: file.type,
+          url: reader.result as string
+        });
+        setUseBrandAvatar(true);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const palette = useMemo(() => generatePalette(primaryColor, secondaryColor, accentColor, darkBgColor, lightBgColor), [primaryColor, secondaryColor, accentColor, darkBgColor, lightBgColor]);
   const selectedFonts = useMemo(() => FONT_PAIRINGS[fontPairingIndex] || FONT_PAIRINGS[0], [fontPairingIndex]);
@@ -224,6 +245,9 @@ export default function GeneratorPage() {
     set('carousel_palettes', updated);
   };
 
+  const loadedCarouselIdRef = useRef<string | null>(null);
+  const currentCarouselIdRef = useRef<string | null>(null);
+
   useEffect(() => {
     loadAllGoogleFonts();
     checkApiKey();
@@ -247,30 +271,50 @@ export default function GeneratorPage() {
     // Load from history if passed via state
     if (location.state?.carouselData) {
       const data = location.state.carouselData as CarouselHistoryItem;
-      setSlides(data.slides);
-      setTopic(data.topic);
-      setBrandName(data.brandName);
-      setPrimaryColor(data.primaryColor);
-      setTone(data.tone);
-      setFontPairingIndex(data.fontPairingIndex);
-      setNumSlides(data.numSlides);
-      setActiveTab('preview');
+      if (loadedCarouselIdRef.current !== data.id) {
+        loadedCarouselIdRef.current = data.id;
+        currentCarouselIdRef.current = data.id;
+        setSlides(data.slides || []);
+        setTopic(data.topic || '');
+        setBrandName(data.brandName || 'SuaMarca');
+        if (data.handle !== undefined) setHandle(data.handle);
+        setPrimaryColor(data.primaryColor || '#6C63FF');
+        setSecondaryColor(data.secondaryColor || '');
+        setAccentColor(data.accentColor || '');
+        setDarkBgColor(data.darkBgColor || '');
+        setLightBgColor(data.lightBgColor || '');
+        setTone(data.tone || 'Profissional');
+        setFontPairingIndex(data.fontPairingIndex ?? 0);
+        setNumSlides(data.numSlides || 7);
+        if (data.isSeamless !== undefined) setIsSeamless(data.isSeamless);
+        if (data.logoUrl !== undefined) setLogoUrl(data.logoUrl);
+        if (data.format !== undefined) setFormat(data.format);
+        if (data.generationLayout !== undefined) setGenerationLayout(data.generationLayout);
+        if (data.phraseCategory !== undefined) setPhraseCategory(data.phraseCategory);
+        if (data.customPhrases !== undefined) setCustomPhrases(data.customPhrases);
+        if (data.brandAvatar !== undefined) setBrandAvatar(data.brandAvatar);
+        if (data.useBrandAvatar !== undefined) setUseBrandAvatar(data.useBrandAvatar);
+        setActiveTab('preview');
 
-      const defaultTones = ['Profissional', 'Casual', 'Divertido', 'Ousado', 'Minimalista', 'Educativo'];
-      if (defaultTones.includes(data.tone)) {
-        setSelectedToneOption(data.tone);
-      } else {
-        get('carousel_custom_tones').then((savedTones) => {
-          const matched = Array.isArray(savedTones) && savedTones.find(ct => ct.description === data.tone);
-          if (matched) {
-            setSelectedToneOption(matched.id);
-          } else {
-            setSelectedToneOption('custom_new');
-            setNewToneDescription(data.tone);
-          }
-        });
+        const defaultTones = ['Profissional', 'Casual', 'Divertido', 'Ousado', 'Minimalista', 'Educativo'];
+        if (defaultTones.includes(data.tone)) {
+          setSelectedToneOption(data.tone);
+        } else {
+          get('carousel_custom_tones').then((savedTones) => {
+            const matched = Array.isArray(savedTones) && savedTones.find(ct => ct.description === data.tone);
+            if (matched) {
+              setSelectedToneOption(matched.id);
+            } else {
+              setSelectedToneOption('custom_new');
+              setNewToneDescription(data.tone);
+            }
+          });
+        }
       }
     } else if (location.state?.mode === 'manual' && slides.length === 0) {
+      const manualId = `manual-${Date.now()}`;
+      loadedCarouselIdRef.current = manualId;
+      currentCarouselIdRef.current = manualId;
       // Initialize empty slides for manual mode
       const emptySlides: SlideData[] = Array.from({ length: numSlides }).map((_, i) => ({
         id: `manual-${Date.now()}-${i}`,
@@ -487,17 +531,35 @@ export default function GeneratorPage() {
   };
 
   const saveToHistory = async (generatedSlides: SlideData[], currentTopic?: string) => {
+    if (!generatedSlides || generatedSlides.length === 0) return;
     const activeTopic = currentTopic || topic;
+    const itemId = currentCarouselIdRef.current || location.state?.carouselData?.id || Math.random().toString(36).substring(7);
+    currentCarouselIdRef.current = itemId;
+    loadedCarouselIdRef.current = itemId;
+
     const historyItem: CarouselHistoryItem = {
-      id: location.state?.carouselData?.id || Math.random().toString(36).substring(7),
-      title: generatedSlides[0]?.title || activeTopic,
+      id: itemId,
+      title: generatedSlides[0]?.title || activeTopic || 'Carrossel',
       topic: activeTopic,
-      numSlides,
+      numSlides: generatedSlides.length,
       slides: generatedSlides,
       brandName,
+      handle,
       primaryColor,
+      secondaryColor,
+      accentColor,
+      darkBgColor,
+      lightBgColor,
       tone,
       fontPairingIndex,
+      isSeamless,
+      logoUrl,
+      format,
+      generationLayout,
+      phraseCategory,
+      customPhrases,
+      brandAvatar,
+      useBrandAvatar,
       createdAt: location.state?.carouselData?.createdAt || Date.now()
     };
     try {
@@ -508,7 +570,7 @@ export default function GeneratorPage() {
       }
       
       // Update existing or add new
-      const filtered = existing!.filter(item => item.id !== historyItem.id);
+      const filtered = (existing || []).filter(item => item.id !== historyItem.id);
       const updatedHistory = [historyItem, ...filtered].slice(0, 50);
       
       await set('carousel_history', updatedHistory);
@@ -520,6 +582,31 @@ export default function GeneratorPage() {
       console.error('Failed to save to history', e);
     }
   };
+
+  // Auto-save visual options and brand settings when they change (if slides exist)
+  useEffect(() => {
+    if (slides.length > 0 && !isGenerating) {
+      saveToHistoryDebounced(slides);
+    }
+  }, [
+    primaryColor,
+    secondaryColor,
+    accentColor,
+    darkBgColor,
+    lightBgColor,
+    fontPairingIndex,
+    brandName,
+    handle,
+    format,
+    generationLayout,
+    isSeamless,
+    logoUrl,
+    brandAvatar,
+    useBrandAvatar,
+    tone,
+    topic,
+    saveToHistoryDebounced
+  ]);
 
   const handleGenerate = async () => {
     let activeTopic = topic;
@@ -730,19 +817,22 @@ export default function GeneratorPage() {
             await Promise.all(batch.map(async ({ slide, index }) => {
               try {
                 const aspectRatio = "4:3";
+                const hasAvatar = (useBrandAvatar && !!brandAvatar) || !!referenceImage;
+                const activeImageRef = (useBrandAvatar && brandAvatar) ? brandAvatar : (creativeReference || referenceImage || undefined);
+
                 const cinematicPrompt = buildCinematicImagePrompt(
                   slide.imageDescription || '',
                   slide.type,
                   index,
                   activeTopic,
                   tone,
-                  !!referenceImage,
+                  hasAvatar,
                   activeStylePrompt,
                   slide.layoutModel || generationLayout,
                   slide.title,
                   slide.content
                 );
-                const imageUrl = await generateImage(cinematicPrompt, creativeReference || referenceImage || undefined, aspectRatio, slide.type, index);
+                const imageUrl = await generateImage(cinematicPrompt, activeImageRef, aspectRatio, slide.type, index);
                 
                 finalSlides[index] = { ...slide, imageUrl };
                 setSlides([...finalSlides]);
@@ -1037,20 +1127,23 @@ export default function GeneratorPage() {
       if (!slide) return;
       
       const aspectRatio = "4:3"; // Updated to 4:3 as requested
+      const hasAvatar = (useBrandAvatar && !!brandAvatar) || !!referenceImage;
+      const activeImageRef = (useBrandAvatar && brandAvatar) ? brandAvatar : (creativeReference || referenceImage || undefined);
+
       const cinematicPrompt = buildCinematicImagePrompt(
         prompt,
         slide.type,
         slideIndex,
         topic,
         tone,
-        !!referenceImage,
+        hasAvatar,
         creativeStylePrompt,
         slide.layoutModel,
         slide.title,
         slide.content
       );
       
-      const imageUrl = await generateImage(cinematicPrompt, creativeReference || referenceImage || undefined, aspectRatio, slide.type, slideIndex);
+      const imageUrl = await generateImage(cinematicPrompt, activeImageRef, aspectRatio, slide.type, slideIndex);
       const newSlides = slides.map(s => s.id === slideId ? { ...s, imageUrl } : s);
       setSlides(newSlides);
       saveToHistory(newSlides);
@@ -1863,6 +1956,70 @@ export default function GeneratorPage() {
                 <span className="text-xs text-[rgba(240,240,240,0.4)]">
                   {logoUrl ? 'Logo carregada' : 'Fazer upload'}
                 </span>
+              </div>
+            </div>
+
+            {/* Avatar da Marca / Criador (Consistência de Rosto) */}
+            <div className="flex flex-col gap-2 p-3.5 bg-[#0A0A0A] border border-[rgba(255,255,255,0.08)] rounded-xl mt-1">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-white flex items-center gap-1.5">
+                  <User size={14} className="text-[#6C63FF]" />
+                  Avatar do Criador / Marca
+                </label>
+                {brandAvatar && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
+                    <Sparkles size={10} /> Consistência Ativa
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-[rgba(240,240,240,0.5)] leading-relaxed">
+                Envie a foto do rosto do especialista para que a IA gere ilustrações mantendo a mesma identidade física.
+              </p>
+
+              <div className="flex items-center gap-3 mt-1">
+                {brandAvatar ? (
+                  <div className="relative w-14 h-14 rounded-xl overflow-hidden border border-[#6C63FF] shadow-[0_0_12px_rgba(108,99,255,0.3)] shrink-0">
+                    <img src={brandAvatar.url} alt="Avatar da Marca" className="w-full h-full object-cover" />
+                    <button 
+                      onClick={() => setBrandAvatar(null)}
+                      className="absolute inset-0 bg-black/70 text-white flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity text-xs font-bold"
+                      title="Remover Avatar"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                ) : (
+                  <button 
+                    onClick={() => brandAvatarInputRef.current?.click()}
+                    className="w-14 h-14 rounded-xl border border-dashed border-[rgba(108,99,255,0.4)] bg-[rgba(108,99,255,0.05)] flex flex-col items-center justify-center text-[#6C63FF] hover:bg-[rgba(108,99,255,0.12)] transition-all shrink-0"
+                  >
+                    <Upload size={18} />
+                    <span className="text-[9px] font-bold mt-0.5">Avatar</span>
+                  </button>
+                )}
+
+                <input 
+                  type="file" 
+                  ref={brandAvatarInputRef}
+                  onChange={handleBrandAvatarUpload}
+                  accept="image/*"
+                  className="hidden"
+                />
+
+                <div className="flex flex-col gap-1.5 flex-1">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input 
+                      type="checkbox"
+                      checked={useBrandAvatar}
+                      onChange={e => setUseBrandAvatar(e.target.checked)}
+                      className="w-4 h-4 text-[#6C63FF] rounded border-[rgba(255,255,255,0.2)] bg-[#161616]"
+                    />
+                    <span className="text-xs text-[rgba(240,240,240,0.8)] font-medium">Usar avatar nas imagens IA</span>
+                  </label>
+                  <span className="text-[10px] text-[rgba(240,240,240,0.4)]">
+                    {brandAvatar ? (useBrandAvatar ? 'Ativado nas gerações' : 'Desativado') : 'Nenhuma foto enviada'}
+                  </span>
+                </div>
               </div>
             </div>
           </div>

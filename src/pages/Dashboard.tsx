@@ -11,9 +11,22 @@ export interface CarouselHistoryItem {
   numSlides: number;
   slides: any[];
   brandName: string;
+  handle?: string;
   primaryColor: string;
+  secondaryColor?: string;
+  accentColor?: string;
+  darkBgColor?: string;
+  lightBgColor?: string;
   tone: string;
   fontPairingIndex: number;
+  isSeamless?: boolean;
+  logoUrl?: string | null;
+  format?: 'portrait' | 'square' | 'stories';
+  generationLayout?: 'default' | 'forbes' | 'twitter' | 'frases';
+  phraseCategory?: string;
+  customPhrases?: string;
+  brandAvatar?: { data: string, mimeType: string, url: string } | null;
+  useBrandAvatar?: boolean;
   createdAt: number;
 }
 
