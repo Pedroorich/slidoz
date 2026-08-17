@@ -575,9 +575,6 @@ export default function GeneratorPage() {
       
       await set('carousel_history', updatedHistory);
       localStorage.removeItem('carousel_history');
-      
-      // Update location state so subsequent edits update the same item
-      navigate('.', { replace: true, state: { carouselData: historyItem } });
     } catch (e) {
       console.error('Failed to save to history', e);
     }

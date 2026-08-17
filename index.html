@@ -51,7 +51,7 @@
     window.addEventListener('unhandledrejection', function (event) {
       console.error("Global Promise Rejection Caught:", event.reason);
       const root = document.getElementById('root');
-      if (root) {
+      if (root && (!root.children || root.children.length === 0)) {
         root.innerHTML = `
             <div style="background: #0A0A0A; color: #FF453A; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: sans-serif; padding: 20px; box-sizing: border-box; text-align: center;">
               <div style="max-width: 600px; width: 100%; background: #161616; border: 1px solid rgba(255, 69, 58, 0.2); padding: 40px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
