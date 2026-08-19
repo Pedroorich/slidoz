@@ -929,11 +929,11 @@ export default function GeneratorPage() {
         console.warn("Aviso ao aguardar document.fonts.ready:", fontReadyError);
       }
 
-      // 3. Coleta apenas as fontes que estão sendo realmente utilizadas no carrossel atual
+      // 3. Coleta todas as fontes efetivamente usadas no carrossel atual
       const selectedFonts = FONT_PAIRINGS[fontPairingIndex];
       const usedFonts = new Set<string>();
-      if (selectedFonts.heading) usedFonts.add(selectedFonts.heading);
-      if (selectedFonts.body) usedFonts.add(selectedFonts.body);
+      if (selectedFonts?.heading) usedFonts.add(selectedFonts.heading);
+      if (selectedFonts?.body) usedFonts.add(selectedFonts.body);
 
       slides.forEach(slide => {
         if (slide.titleFont) usedFonts.add(slide.titleFont);
@@ -945,76 +945,111 @@ export default function GeneratorPage() {
         }
       });
 
-      // Formata a lista de fontes para o Google Fonts
-      const fontList = Array.from(usedFonts)
-        .filter(f => f !== 'Monument Extended' && f !== 'Times New Roman')
-        .map(f => {
-          if (['Anton', 'Bebas Neue', 'Instrument Serif', 'Bagel Fat One'].includes(f)) {
-            return `${f.replace(/ /g, '+')}:wght@400`;
-          }
-          return `${f.replace(/ /g, '+')}:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,300;1,400;1,500;1,600;1,700;1,800`;
-        });
+      // Adiciona fontes padrão por segurança
+      usedFonts.add('Syne');
+      usedFonts.add('DM Sans');
 
-      // Adiciona Syne e DM Sans que são as fontes padrão do app por garantia
-      if (!usedFonts.has('Syne')) {
-        fontList.push('Syne:wght@400;600;700;800');
-      }
-      if (!usedFonts.has('DM Sans')) {
-        fontList.push('DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400;1,500;1,600');
-      }
-
-      // 4. Busca o CSS destas fontes diretamente do Google Fonts de forma individual e converte para base64.
-      // A busca individual impede que a falha em obter uma fonte quebre o lote inteiro das demais fontes.
+      // 4. Busca o CSS destas fontes no Google Fonts com fallbacks resilientes
       let base64FontCSS = '';
-      if (fontList.length > 0) {
-        const fontUrlToBase64 = new Map<string, string>();
-        const cssTexts: string[] = [];
+      const fontUrlToBase64 = new Map<string, string>();
+      const cssTexts: string[] = [];
 
-        await Promise.all(fontList.map(async (fontParam) => {
-          const fontCSSUrl = `https://fonts.googleapis.com/css2?family=${fontParam}&display=swap`;
+      const cleanFontNames = Array.from(usedFonts)
+        .filter(f => f && f !== 'Monument Extended' && f !== 'Times New Roman');
+
+      await Promise.all(cleanFontNames.map(async (fontName) => {
+        const cleanName = fontName.replace(/ /g, '+');
+        
+        // Tenta buscar com variações de peso para garantir HTTP 200 em qualquer fonte
+        const candidates = [
+          `https://fonts.googleapis.com/css2?family=${cleanName}:wght@400;500;600;700;800&display=swap`,
+          `https://fonts.googleapis.com/css2?family=${cleanName}:wght@400;600;700&display=swap`,
+          `https://fonts.googleapis.com/css2?family=${cleanName}:wght@400;700&display=swap`,
+          `https://fonts.googleapis.com/css2?family=${cleanName}:wght@400&display=swap`,
+          `https://fonts.googleapis.com/css2?family=${cleanName}&display=swap`
+        ];
+
+        let cssText = '';
+        for (const url of candidates) {
           try {
-            const fontRes = await fetch(fontCSSUrl);
+            const fontRes = await fetch(url);
             if (fontRes.ok) {
-              let cssText = await fontRes.text();
-              
-              // Regex robusta para encontrar as URLs binárias (.woff2)
-              const urlRegex = /url\(['"]?(https:\/\/fonts\.gstatic\.com\/[^'"\)]+)['"]?\)/g;
-              const matches = [...cssText.matchAll(urlRegex)];
-
-              // Busca e converte cada arquivo woff2 para base64 em paralelo
-              await Promise.all(matches.map(async (match) => {
-                const fontFileUrl = match[1];
-                if (fontUrlToBase64.has(fontFileUrl)) return;
-                try {
-                  const fontFileRes = await fetch(fontFileUrl);
-                  if (fontFileRes.ok) {
-                    const blob = await fontFileRes.blob();
-                    const base64Data = await new Promise<string>((resolve, reject) => {
-                      const reader = new FileReader();
-                      reader.onloadend = () => resolve(reader.result as string);
-                      reader.onerror = reject;
-                      reader.readAsDataURL(blob);
-                    });
-                    fontUrlToBase64.set(fontFileUrl, base64Data);
-                  }
-                } catch (err) {
-                  console.error(`Erro ao inlinar arquivo de fonte ${fontFileUrl}:`, err);
-                }
-              }));
-
-              cssTexts.push(cssText);
+              const text = await fontRes.text();
+              if (text && text.includes('@font-face')) {
+                cssText = text;
+                break;
+              }
             }
-          } catch (fontFetchError) {
-            console.error(`Erro ao obter e processar fonte (${fontParam}):`, fontFetchError);
+          } catch (e) {
+            // Tenta o próximo candidato
           }
-        }));
-
-        let combinedCSS = cssTexts.join('\n');
-        for (const [fontFileUrl, base64Data] of fontUrlToBase64.entries()) {
-          combinedCSS = combinedCSS.replaceAll(fontFileUrl, base64Data);
         }
-        base64FontCSS = combinedCSS;
+
+        if (cssText) {
+          // Extrai todas as URLs de arquivos binários (.woff2 / .ttf / .woff)
+          const urlRegex = /url\(['"]?(https:\/\/[^'"\)]+)['"]?\)/g;
+          const matches = [...cssText.matchAll(urlRegex)];
+
+          await Promise.all(matches.map(async (match) => {
+            const fontFileUrl = match[1];
+            if (fontUrlToBase64.has(fontFileUrl)) return;
+            try {
+              const fontFileRes = await fetch(fontFileUrl);
+              if (fontFileRes.ok) {
+                const blob = await fontFileRes.blob();
+                const base64Data = await new Promise<string>((resolve, reject) => {
+                  const reader = new FileReader();
+                  reader.onloadend = () => resolve(reader.result as string);
+                  reader.onerror = reject;
+                  reader.readAsDataURL(blob);
+                });
+                fontUrlToBase64.set(fontFileUrl, base64Data);
+              }
+            } catch (err) {
+              console.error(`Erro ao inlinar arquivo de fonte ${fontFileUrl}:`, err);
+            }
+          }));
+
+          cssTexts.push(cssText);
+        }
+      }));
+
+      // Também inclui o CSS do link pré-carregado no head se existir
+      const existingLink = document.getElementById('google-fonts-all') as HTMLLinkElement;
+      if (existingLink && existingLink.href) {
+        try {
+          const res = await fetch(existingLink.href);
+          if (res.ok) {
+            const mainCss = await res.text();
+            const urlRegex = /url\(['"]?(https:\/\/[^'"\)]+)['"]?\)/g;
+            const matches = [...mainCss.matchAll(urlRegex)];
+            await Promise.all(matches.map(async (match) => {
+              const fontFileUrl = match[1];
+              if (fontUrlToBase64.has(fontFileUrl)) return;
+              try {
+                const fontFileRes = await fetch(fontFileUrl);
+                if (fontFileRes.ok) {
+                  const blob = await fontFileRes.blob();
+                  const base64Data = await new Promise<string>((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result as string);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(blob);
+                  });
+                  fontUrlToBase64.set(fontFileUrl, base64Data);
+                }
+              } catch (err) {}
+            }));
+            cssTexts.push(mainCss);
+          }
+        } catch (e) {}
       }
+
+      let combinedCSS = cssTexts.join('\n');
+      for (const [fontFileUrl, base64Data] of fontUrlToBase64.entries()) {
+        combinedCSS = combinedCSS.replaceAll(fontFileUrl, base64Data);
+      }
+      base64FontCSS = combinedCSS;
 
       const slideElements = document.querySelectorAll('.slide-container');
       const newExportedImages: string[] = [];
@@ -1039,8 +1074,8 @@ export default function GeneratorPage() {
             width: exportWidth,
             height: exportHeight,
             cacheBust: true,
-            skipFonts: true, // Ignora varredura padrão para evitar falhas de CORS, pois as fontes que importam já estão no fontEmbedCSS
-            fontEmbedCSS: base64FontCSS || undefined, // Injeta o CSS com as fontes embutidas em base64 diretamente no SVG
+            skipFonts: true, // Ignora varredura padrão de CSS externos para evitar CORS, usando nosso fontEmbedCSS 100% inlinado
+            fontEmbedCSS: base64FontCSS || undefined,
             backgroundColor: bgColor !== 'rgba(0, 0, 0, 0)' ? bgColor : '#000000'
           });
 
