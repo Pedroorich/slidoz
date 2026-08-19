@@ -1049,40 +1049,69 @@ export default function GeneratorPage() {
       for (const [fontFileUrl, base64Data] of fontUrlToBase64.entries()) {
         combinedCSS = combinedCSS.replaceAll(fontFileUrl, base64Data);
       }
+
+      // REMOVE UNICODE-RANGE para evitar que o renderizador de SVG/Canvas do Chrome descarte os glyphs da fonte embutida
+      combinedCSS = combinedCSS.replaceAll(/unicode-range:\s*[^;]+;/gi, '');
+
       base64FontCSS = combinedCSS;
+
+      // Injeta temporariamente o CSS com as fontes embutidas no document.head para forçar o navegador a carregar todas na memória do DOM
+      let tempStyleTag = document.getElementById('export-inlined-fonts') as HTMLStyleElement;
+      if (!tempStyleTag) {
+        tempStyleTag = document.createElement('style');
+        tempStyleTag.id = 'export-inlined-fonts';
+        document.head.appendChild(tempStyleTag);
+      }
+      tempStyleTag.textContent = base64FontCSS;
+
+      // Aguarda o navegador registrar e carregar todas as fontes na memória do documento
+      try {
+        await document.fonts.ready;
+        await new Promise(r => setTimeout(r, 600));
+      } catch (e) {
+        console.warn("Aviso ao aguardar document.fonts.ready:", e);
+      }
 
       const slideElements = document.querySelectorAll('.slide-container');
       const newExportedImages: string[] = [];
 
-      for (let i = 0; i < slideElements.length; i++) {
-        const el = slideElements[i] as HTMLElement;
-        el.scrollIntoView({ behavior: 'instant', block: 'nearest', inline: 'center' });
-        await new Promise(r => setTimeout(r, 450)); // Pequena pausa para garantir renderização perfeita no DOM
+      try {
+        for (let i = 0; i < slideElements.length; i++) {
+          const el = slideElements[i] as HTMLElement;
+          el.scrollIntoView({ behavior: 'instant', block: 'nearest', inline: 'center' });
+          await new Promise(r => setTimeout(r, 450)); // Pequena pausa para garantir renderização perfeita no DOM
 
-        try {
-          const bgColor = window.getComputedStyle(el).backgroundColor;
-          let exportWidth = 420;
-          let exportHeight = 525;
-          if (format === 'square') {
-            exportHeight = 420;
-          } else if (format === 'stories') {
-            exportHeight = 746;
+          try {
+            const bgColor = window.getComputedStyle(el).backgroundColor;
+            let exportWidth = 420;
+            let exportHeight = 525;
+            if (format === 'square') {
+              exportHeight = 420;
+            } else if (format === 'stories') {
+              exportHeight = 746;
+            }
+
+            const dataUrl = await toPng(el, {
+              pixelRatio: 3,
+              width: exportWidth,
+              height: exportHeight,
+              cacheBust: true,
+              skipFonts: true, // Ignora varredura padrão de CSS externos para evitar CORS, usando nosso fontEmbedCSS 100% inlinado
+              fontEmbedCSS: base64FontCSS || undefined,
+              backgroundColor: bgColor !== 'rgba(0, 0, 0, 0)' ? bgColor : '#000000'
+            });
+
+            newExportedImages.push(dataUrl);
+          } catch (slideError: any) {
+            console.error(`Erro no slide ${i + 1}:`, slideError);
+            throw new Error(`Não foi possível renderizar o slide ${i + 1}. Se você usou uma URL de imagem externa, ela pode estar bloqueando a exportação (CORS). Tente fazer upload da imagem do seu computador usando o botão "Upload".`);
           }
-
-          const dataUrl = await toPng(el, {
-            pixelRatio: 3,
-            width: exportWidth,
-            height: exportHeight,
-            cacheBust: true,
-            skipFonts: true, // Ignora varredura padrão de CSS externos para evitar CORS, usando nosso fontEmbedCSS 100% inlinado
-            fontEmbedCSS: base64FontCSS || undefined,
-            backgroundColor: bgColor !== 'rgba(0, 0, 0, 0)' ? bgColor : '#000000'
-          });
-
-          newExportedImages.push(dataUrl);
-        } catch (slideError: any) {
-          console.error(`Erro no slide ${i + 1}:`, slideError);
-          throw new Error(`Não foi possível renderizar o slide ${i + 1}. Se você usou uma URL de imagem externa, ela pode estar bloqueando a exportação (CORS). Tente fazer upload da imagem do seu computador usando o botão "Upload".`);
+        }
+      } finally {
+        // Remove a tag temporária de fontes do head após a exportação
+        const styleTagToRemove = document.getElementById('export-inlined-fonts');
+        if (styleTagToRemove) {
+          styleTagToRemove.remove();
         }
       }
 
