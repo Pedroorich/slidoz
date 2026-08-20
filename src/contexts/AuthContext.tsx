@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import { User, onAuthStateChanged, signOut as fbSignOut } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
@@ -41,7 +41,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const adminEmail = import.meta.env.VITE_ADMIN_EMAIL?.toLowerCase() || '';
 
-  const fetchProfile = async (currentUser: User) => {
+  const fetchProfile = useCallback(async (currentUser: User) => {
     try {
       const userDocRef = doc(db, 'users', currentUser.uid);
       const userDoc = await getDoc(userDocRef);
@@ -89,13 +89,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.error('Erro ao buscar perfil do usuário no Firestore:', error);
       setProfile(null);
     }
-  };
+  }, [adminEmail]);
 
-  const refreshProfile = async () => {
+  const refreshProfile = useCallback(async () => {
     if (user) {
       await fetchProfile(user);
     }
-  };
+  }, [user, fetchProfile]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -110,15 +110,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [fetchProfile]);
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     setLoading(true);
     await fbSignOut(auth);
     setUser(null);
     setProfile(null);
     setLoading(false);
-  };
+  }, []);
 
   // Verifica se a assinatura está ativa
   const isAdmin = profile?.role === 'admin';
@@ -144,7 +144,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const value = {
+  const value = useMemo(() => ({
     user,
     profile,
     loading,
@@ -152,7 +152,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isSubscriptionActive,
     logout,
     refreshProfile
-  };
+  }), [user, profile, loading, isAdmin, isSubscriptionActive, logout, refreshProfile]);
 
   return (
     <AuthContext.Provider value={value}>
