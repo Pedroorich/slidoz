@@ -312,10 +312,10 @@ export async function generateImage(
     const customOpenRouterKey = localStorage.getItem('custom_openrouter_key');
     const openRouterModel = localStorage.getItem('custom_openrouter_image_model') || 'google/gemini-2.5-flash-image';
 
-    const isOpenRouter = customProvider === 'openrouter' || (customKey && customKey.startsWith('sk-or-')) || (customOpenRouterKey && customOpenRouterKey.startsWith('sk-or-'));
+    const isOpenRouter = customProvider === 'openrouter';
 
     if (isOpenRouter) {
-      const apiKey = customOpenRouterKey || customKey || process.env.API_KEY || process.env.GEMINI_API_KEY;
+      const apiKey = customOpenRouterKey || (customKey?.startsWith('sk-or-') ? customKey : '') || process.env.API_KEY || process.env.GEMINI_API_KEY;
       if (!apiKey || apiKey === 'DUMMY_KEY') {
         throw new Error("Chave de API do OpenRouter ausente ou inválida. Insira uma chave nas configurações.");
       }
@@ -443,9 +443,9 @@ export async function analyzeCreativeReference(
     const customProvider = localStorage.getItem('custom_ai_provider') || 'gemini';
     const customModel = localStorage.getItem('custom_openrouter_model_custom')?.trim() || localStorage.getItem('custom_openrouter_model') || 'google/gemini-2.5-flash';
     
-    const isOpenRouter = customProvider === 'openrouter' || (customKey && customKey.startsWith('sk-or-')) || (customOpenRouterKey && customOpenRouterKey.startsWith('sk-or-'));
+    const isOpenRouter = customProvider === 'openrouter';
     const apiKey = isOpenRouter 
-      ? (customOpenRouterKey || customKey || process.env.API_KEY || process.env.GEMINI_API_KEY || "DUMMY_KEY")
+      ? (customOpenRouterKey || (customKey?.startsWith('sk-or-') ? customKey : '') || process.env.API_KEY || process.env.GEMINI_API_KEY || "DUMMY_KEY")
       : (customKey || process.env.API_KEY || process.env.GEMINI_API_KEY || "DUMMY_KEY");
 
     const promptText = "Analyze this image and describe its core visual style. Focus exclusively on lighting, color palette, camera effects, artistic medium/texture, and mood. Provide a concise, highly descriptive 2-sentence prompt fragment that can be used to instruct an image generator to replicate this exact same visual styling and framing.";
@@ -530,9 +530,9 @@ export async function analyzePhotoQuietZone(
     const customProvider = localStorage.getItem('custom_ai_provider') || 'gemini';
     const customModel = localStorage.getItem('custom_openrouter_model_custom')?.trim() || localStorage.getItem('custom_openrouter_model') || 'google/gemini-2.5-flash';
     
-    const isOpenRouter = customProvider === 'openrouter' || (customKey && customKey.startsWith('sk-or-')) || (customOpenRouterKey && customOpenRouterKey.startsWith('sk-or-'));
+    const isOpenRouter = customProvider === 'openrouter';
     const apiKey = isOpenRouter 
-      ? (customOpenRouterKey || customKey || process.env.API_KEY || process.env.GEMINI_API_KEY || "DUMMY_KEY")
+      ? (customOpenRouterKey || (customKey?.startsWith('sk-or-') ? customKey : '') || process.env.API_KEY || process.env.GEMINI_API_KEY || "DUMMY_KEY")
       : (customKey || process.env.API_KEY || process.env.GEMINI_API_KEY || "DUMMY_KEY");
 
     const promptText = `Analyze this image and identify the best position to place overlay text so that it does not overlap with the main subject (e.g., a person, their face, or a main object). The text should be placed in a 'quiet zone' of the image (negative space or clean background).
@@ -1159,9 +1159,9 @@ export async function generateCarouselContent(
     const customProvider = localStorage.getItem('custom_ai_provider') || 'gemini';
     const customModel = localStorage.getItem('custom_openrouter_model_custom')?.trim() || localStorage.getItem('custom_openrouter_model') || 'google/gemini-2.5-flash';
     
-    const isOpenRouter = customProvider === 'openrouter' || (customKey && customKey.startsWith('sk-or-')) || (customOpenRouterKey && customOpenRouterKey.startsWith('sk-or-'));
+    const isOpenRouter = customProvider === 'openrouter';
     const apiKey = isOpenRouter 
-      ? (customOpenRouterKey || customKey || process.env.API_KEY || process.env.GEMINI_API_KEY)
+      ? (customOpenRouterKey || (customKey?.startsWith('sk-or-') ? customKey : '') || process.env.API_KEY || process.env.GEMINI_API_KEY)
       : (customKey || process.env.API_KEY || process.env.GEMINI_API_KEY);
 
     if (!apiKey || apiKey === 'DUMMY_KEY') {
@@ -1429,9 +1429,9 @@ async function callTextAi(prompt: string, maxTokens: number = 2000, jsonMode: bo
   const customProvider = localStorage.getItem('custom_ai_provider') || 'gemini';
   const customModel = localStorage.getItem('custom_openrouter_model_custom')?.trim() || localStorage.getItem('custom_openrouter_model') || 'google/gemini-2.5-flash';
 
-  const isOpenRouter = customProvider === 'openrouter' || (customKey && customKey.startsWith('sk-or-')) || (customOpenRouterKey && customOpenRouterKey.startsWith('sk-or-'));
+  const isOpenRouter = customProvider === 'openrouter';
   const apiKey = isOpenRouter 
-    ? (customOpenRouterKey || customKey || process.env.API_KEY || process.env.GEMINI_API_KEY || "DUMMY_KEY")
+    ? (customOpenRouterKey || (customKey?.startsWith('sk-or-') ? customKey : '') || process.env.API_KEY || process.env.GEMINI_API_KEY || "DUMMY_KEY")
     : (customKey || process.env.API_KEY || process.env.GEMINI_API_KEY || "DUMMY_KEY");
 
   if (isOpenRouter) {
@@ -1722,9 +1722,9 @@ ${includeImages ? '- imageDescription: Descrição visual da imagem de apoio (em
     const customProvider = localStorage.getItem('custom_ai_provider') || 'gemini';
     const customModel = localStorage.getItem('custom_openrouter_model_custom')?.trim() || localStorage.getItem('custom_openrouter_model') || 'google/gemini-2.5-flash';
 
-    const isOpenRouter = customProvider === 'openrouter' || (customKey && customKey.startsWith('sk-or-')) || (customOpenRouterKey && customOpenRouterKey.startsWith('sk-or-'));
+    const isOpenRouter = customProvider === 'openrouter';
     const apiKey = isOpenRouter 
-      ? (customOpenRouterKey || customKey || process.env.API_KEY || process.env.GEMINI_API_KEY || "DUMMY_KEY")
+      ? (customOpenRouterKey || (customKey?.startsWith('sk-or-') ? customKey : '') || process.env.API_KEY || process.env.GEMINI_API_KEY || "DUMMY_KEY")
       : (customKey || process.env.API_KEY || process.env.GEMINI_API_KEY || "DUMMY_KEY");
 
     let rawText = '';
