@@ -5,6 +5,15 @@ extend([mixPlugin]);
 
 export type VisualStyle = 'Editorial Luxo' | 'Brutalismo Moderno' | 'Minimal Tech' | 'Corporate Clean';
 
+const paletteCache = new Map<string, {
+  BRAND_PRIMARY: string;
+  BRAND_SECONDARY: string;
+  BRAND_ACCENT: string;
+  LIGHT_BG: string;
+  LIGHT_BORDER: string;
+  DARK_BG: string;
+}>();
+
 export function generatePalette(
   primaryHex: string,
   secondaryHex?: string,
@@ -12,8 +21,12 @@ export function generatePalette(
   darkBgHex?: string,
   lightBgHex?: string
 ) {
-  const primary = colord(primaryHex);
-  
+  const key = `${primaryHex || ''}_${secondaryHex || ''}_${accentHex || ''}_${darkBgHex || ''}_${lightBgHex || ''}`;
+  if (paletteCache.has(key)) {
+    return paletteCache.get(key)!;
+  }
+
+  const primary = colord(primaryHex || '#6C63FF');
   const brandSecondary = secondaryHex ? colord(secondaryHex).toHex() : primary.lighten(0.2).toHex();
   const brandAccent = accentHex ? colord(accentHex).toHex() : primary.darken(0.3).toHex();
   
@@ -21,7 +34,7 @@ export function generatePalette(
   const lightBorder = colord(lightBg).darken(0.05).toHex();
   const darkBg = darkBgHex ? colord(darkBgHex).toHex() : colord('#111111').mix(primary, 0.1).toHex();
 
-  return {
+  const res = {
     BRAND_PRIMARY: primary.toHex(),
     BRAND_SECONDARY: brandSecondary,
     BRAND_ACCENT: brandAccent,
@@ -29,6 +42,12 @@ export function generatePalette(
     LIGHT_BORDER: lightBorder,
     DARK_BG: darkBg,
   };
+
+  if (paletteCache.size > 100) {
+    paletteCache.clear();
+  }
+  paletteCache.set(key, res);
+  return res;
 }
 
 export const FONT_PAIRINGS = [

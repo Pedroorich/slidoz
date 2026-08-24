@@ -569,9 +569,20 @@ export default function GeneratorPage() {
         existing = localSaved ? JSON.parse(localSaved) : [];
       }
       
-      // Update existing or add new
+      // Otimização de Memória: Limita a 12 itens no histórico e limpa imagens base64 muito grandes em itens antigos (>3 carrosséis atrás)
       const filtered = (existing || []).filter(item => item.id !== historyItem.id);
-      const updatedHistory = [historyItem, ...filtered].slice(0, 50);
+      const updatedHistory = [historyItem, ...filtered].slice(0, 12).map((item, idx) => {
+        if (idx > 2) {
+          const cleanSlides = (item.slides || []).map(s => {
+            if (s.imageUrl && s.imageUrl.length > 250000 && s.imageUrl.startsWith('data:')) {
+              return { ...s, imageUrl: undefined };
+            }
+            return s;
+          });
+          return { ...item, slides: cleanSlides };
+        }
+        return item;
+      });
       
       await set('carousel_history', updatedHistory);
       localStorage.removeItem('carousel_history');
