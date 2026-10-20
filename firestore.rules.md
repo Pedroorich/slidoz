@@ -38,6 +38,16 @@ service cloud.firestore {
       
       // Apenas o administrador pode atualizar planos ou deletar usuários
       allow update, delete: if isAdmin();
+
+      // Carrosséis salvos na nuvem do usuário
+      match /carousels/{carouselId} {
+        allow read, write, delete: if request.auth != null && (request.auth.uid == userId || isAdmin());
+      }
+
+      // Perfis de Marca (Brand Kits) do usuário
+      match /brand_kits/{kitId} {
+        allow read, write, delete: if request.auth != null && (request.auth.uid == userId || isAdmin());
+      }
     }
 
     // Regras para a coleção de logs de atividades (auditoria)

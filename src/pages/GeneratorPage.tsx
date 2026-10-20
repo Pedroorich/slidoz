@@ -28,6 +28,7 @@ import {
   Upload, 
   Key, 
   ArrowLeft, 
+  ArrowRight,
   Settings, 
   LayoutGrid, 
   Edit3, 
@@ -46,13 +47,34 @@ import {
   Zap,
   Lightbulb,
   RefreshCw,
-  User
+  User,
+  Globe,
+  Cloud,
+  Folder,
+  Link as LinkIcon
 } from 'lucide-react';
 import { CarouselHistoryItem } from './Dashboard';
 import { get, set } from 'idb-keyval';
 import { db } from '../lib/firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, setDoc, getDocs, deleteDoc } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
+
+export interface BrandKit {
+  id: string;
+  name: string;
+  brandName: string;
+  handle: string;
+  logoUrl: string | null;
+  brandAvatar?: { data: string, mimeType: string, url: string } | null;
+  useBrandAvatar?: boolean;
+  fontPairingIndex: number;
+  primaryColor: string;
+  secondaryColor?: string;
+  accentColor?: string;
+  darkBgColor?: string;
+  lightBgColor?: string;
+  createdAt: number;
+}
 
 // Declare window.aistudio for TypeScript
 declare global {
@@ -112,10 +134,29 @@ export default function GeneratorPage() {
   const [useBrandAvatar, setUseBrandAvatar] = useState<boolean>(true);
 
   // Modos de Criação Inovadores
-  const [creationMode, setCreationMode] = useState<'topic' | 'clone_viral' | 'repurpose'>('topic');
+  const [creationMode, setCreationMode] = useState<'topic' | 'clone_viral' | 'repurpose' | 'url'>('topic');
   const [viralReferenceImage, setViralReferenceImage] = useState<{data: string, mimeType: string, url: string} | null>(null);
   const [longContentText, setLongContentText] = useState('');
   const viralReferenceInputRef = useRef<HTMLInputElement>(null);
+
+  // Modo URL / Artigo Web
+  const [urlInput, setUrlInput] = useState('');
+  const [isExtractingUrl, setIsExtractingUrl] = useState(false);
+  const [urlExtractSuccess, setUrlExtractSuccess] = useState(false);
+  const [urlExtractError, setUrlExtractError] = useState<string | null>(null);
+  const [extractedWordCount, setExtractedWordCount] = useState(0);
+
+  // Perfis de Marca (Brand Kits)
+  const [brandKits, setBrandKits] = useState<BrandKit[]>([]);
+  const [selectedBrandKitId, setSelectedBrandKitId] = useState<string>('');
+  const [isSavingBrandKit, setIsSavingBrandKit] = useState(false);
+  const [newBrandKitName, setNewBrandKitName] = useState('');
+
+  // Qualidade de Exportação (Retina 2x / 3x)
+  const [exportQuality, setExportQuality] = useState<'2x' | '3x'>('3x');
+
+  // Status de Sincronização na Nuvem
+  const [isCloudSynced, setIsCloudSynced] = useState(false);
 
   // Modal Otimizador de Ganchos (Hook Score)
   const [showHookOptimizer, setShowHookOptimizer] = useState(false);
@@ -243,6 +284,237 @@ export default function GeneratorPage() {
     const updated = savedPalettes.filter(p => p.id !== id);
     setSavedPalettes(updated);
     set('carousel_palettes', updated);
+  };
+
+  // Carregar Brand Kits salvos localmente e na nuvem
+  const loadBrandKits = useCallback(async () => {
+    try {
+      let kits: BrandKit[] = [];
+      const savedLocal = localStorage.getItem('slidoz_brand_kits');
+      if (savedLocal) {
+        kits = JSON.parse(savedLocal);
+      } else {
+        const idbKits = await get<BrandKit[]>('slidoz_brand_kits');
+        if (idbKits && Array.isArray(idbKits)) {
+          kits = idbKits;
+        }
+      }
+
+      if (user?.uid) {
+        try {
+          const snapshot = await getDocs(collection(db, 'users', user.uid, 'brand_kits'));
+          const cloudKits: BrandKit[] = [];
+          snapshot.forEach(docSnap => {
+            cloudKits.push({ ...(docSnap.data() as BrandKit), id: docSnap.id });
+          });
+          if (cloudKits.length > 0) {
+            const kitMap = new Map<string, BrandKit>();
+            kits.forEach(k => kitMap.set(k.id, k));
+            cloudKits.forEach(k => kitMap.set(k.id, k));
+            kits = Array.from(kitMap.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+            await set('slidoz_brand_kits', kits);
+          }
+        } catch (e) {
+          console.warn("Aviso ao carregar Brand Kits da nuvem:", e);
+        }
+      }
+
+      setBrandKits(kits);
+    } catch (e) {
+      console.error("Erro ao carregar Brand Kits:", e);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    loadBrandKits();
+  }, [loadBrandKits]);
+
+  const handleSaveBrandKit = async () => {
+    if (!newBrandKitName.trim()) return;
+    const newKit: BrandKit = {
+      id: `brand-${Date.now()}`,
+      name: newBrandKitName.trim(),
+      brandName: brandName || 'SuaMarca',
+      handle: handle || '@seu_usuario',
+      logoUrl: logoUrl,
+      brandAvatar: brandAvatar,
+      useBrandAvatar: useBrandAvatar,
+      fontPairingIndex: fontPairingIndex,
+      primaryColor: primaryColor,
+      secondaryColor: secondaryColor,
+      accentColor: accentColor,
+      darkBgColor: darkBgColor,
+      lightBgColor: lightBgColor,
+      createdAt: Date.now()
+    };
+
+    const updated = [newKit, ...brandKits.filter(k => k.name.toLowerCase() !== newKit.name.toLowerCase())];
+    setBrandKits(updated);
+    await set('slidoz_brand_kits', updated);
+    localStorage.setItem('slidoz_brand_kits', JSON.stringify(updated));
+
+    if (user?.uid) {
+      try {
+        await setDoc(doc(db, 'users', user.uid, 'brand_kits', newKit.id), newKit);
+      } catch (err) {
+        console.warn("Falha ao salvar Brand Kit no Firestore:", err);
+      }
+    }
+
+    setSelectedBrandKitId(newKit.id);
+    setNewBrandKitName('');
+    setIsSavingBrandKit(false);
+  };
+
+  const handleSelectBrandKit = (kit: BrandKit) => {
+    setSelectedBrandKitId(kit.id);
+    if (kit.brandName) setBrandName(kit.brandName);
+    if (kit.handle) setHandle(kit.handle);
+    if (kit.logoUrl !== undefined) setLogoUrl(kit.logoUrl);
+    if (kit.brandAvatar !== undefined) setBrandAvatar(kit.brandAvatar);
+    if (kit.useBrandAvatar !== undefined) setUseBrandAvatar(kit.useBrandAvatar);
+    if (kit.fontPairingIndex !== undefined) setFontPairingIndex(kit.fontPairingIndex);
+    if (kit.primaryColor) setPrimaryColor(kit.primaryColor);
+    if (kit.secondaryColor !== undefined) setSecondaryColor(kit.secondaryColor);
+    if (kit.accentColor !== undefined) setAccentColor(kit.accentColor);
+    if (kit.darkBgColor !== undefined) setDarkBgColor(kit.darkBgColor);
+    if (kit.lightBgColor !== undefined) setLightBgColor(kit.lightBgColor);
+  };
+
+  const handleDeleteBrandKit = async (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const updated = brandKits.filter(k => k.id !== id);
+    setBrandKits(updated);
+    await set('slidoz_brand_kits', updated);
+    localStorage.setItem('slidoz_brand_kits', JSON.stringify(updated));
+    if (selectedBrandKitId === id) setSelectedBrandKitId('');
+
+    if (user?.uid) {
+      try {
+        await deleteDoc(doc(db, 'users', user.uid, 'brand_kits', id));
+      } catch (err) {
+        console.warn("Falha ao deletar Brand Kit no Firestore:", err);
+      }
+    }
+  };
+
+  // Gerenciamento e Reordenação de Slides
+  const handleMoveSlide = useCallback((index: number, direction: 'prev' | 'next') => {
+    if (direction === 'prev' && index > 0) {
+      setSlides(prev => {
+        const next = [...prev];
+        const temp = next[index];
+        next[index] = next[index - 1];
+        next[index - 1] = temp;
+        saveToHistoryDebounced(next);
+        return next;
+      });
+      setCurrentIndex(index - 1);
+    } else if (direction === 'next' && index < slides.length - 1) {
+      setSlides(prev => {
+        const next = [...prev];
+        const temp = next[index];
+        next[index] = next[index + 1];
+        next[index + 1] = temp;
+        saveToHistoryDebounced(next);
+        return next;
+      });
+      setCurrentIndex(index + 1);
+    }
+  }, [slides.length, saveToHistoryDebounced]);
+
+  const handleDuplicateSlide = useCallback((index: number) => {
+    const slideToClone = slides[index];
+    if (!slideToClone) return;
+    const cloned: SlideData = {
+      ...slideToClone,
+      id: `slide-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      title: `${slideToClone.title || 'Slide'} (Cópia)`
+    };
+    setSlides(prev => {
+      const next = [...prev];
+      next.splice(index + 1, 0, cloned);
+      saveToHistoryDebounced(next);
+      return next;
+    });
+    setNumSlides(prev => prev + 1);
+    setCurrentIndex(index + 1);
+  }, [slides, saveToHistoryDebounced]);
+
+  const handleDeleteSlide = useCallback((index: number) => {
+    if (slides.length <= 1) {
+      alert("O carrossel precisa de pelo menos 1 slide.");
+      return;
+    }
+    setSlides(prev => {
+      const next = prev.filter((_, i) => i !== index);
+      saveToHistoryDebounced(next);
+      return next;
+    });
+    setNumSlides(prev => Math.max(1, prev - 1));
+    setCurrentIndex(prev => Math.min(prev, Math.max(0, slides.length - 2)));
+  }, [slides.length, saveToHistoryDebounced]);
+
+  const handleAddSlide = useCallback(() => {
+    const newSlide: SlideData = {
+      id: `slide-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      type: 'features',
+      background: 'light',
+      title: `Novo Slide ${slides.length + 1}`,
+      content: 'Clique para editar este slide no painel à direita...',
+      alignment: 'left',
+      verticalAlignment: 'center',
+      extendBackgroundToNext: isSeamless
+    };
+    setSlides(prev => {
+      const next = [...prev, newSlide];
+      saveToHistoryDebounced(next);
+      return next;
+    });
+    setNumSlides(prev => prev + 1);
+    setCurrentIndex(slides.length);
+  }, [slides.length, isSeamless, saveToHistoryDebounced]);
+
+  // Extração de Conteúdo a partir de URL de Artigo/Blog (Jina AI Reader)
+  const handleExtractFromUrl = async () => {
+    if (!urlInput.trim()) {
+      setUrlExtractError('Insira uma URL de artigo ou blog para extrair.');
+      return;
+    }
+    setIsExtractingUrl(true);
+    setUrlExtractError(null);
+    setUrlExtractSuccess(false);
+
+    try {
+      let cleanUrl = urlInput.trim();
+      if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+        cleanUrl = `https://${cleanUrl}`;
+      }
+
+      const response = await fetch(`https://r.jina.ai/${encodeURIComponent(cleanUrl)}`);
+      if (!response.ok) {
+        throw new Error(`Falha ao acessar URL (Status HTTP ${response.status})`);
+      }
+      const text = await response.text();
+      if (!text || text.trim().length < 60) {
+        throw new Error('Conteúdo textual insuficiente retornado da página informada.');
+      }
+
+      const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+      const heading = lines.find(l => l.startsWith('#'))?.replace(/^#+\s*/, '') || lines[0] || 'Artigo Web';
+      const cleanHeading = heading.replace(/[\[\]]/g, '').slice(0, 70);
+
+      const trimmedContent = text.slice(0, 10000);
+      setLongContentText(trimmedContent);
+      setTopic(cleanHeading);
+      setExtractedWordCount(trimmedContent.split(/\s+/).length);
+      setUrlExtractSuccess(true);
+    } catch (err: any) {
+      console.error('Falha na extração de URL:', err);
+      setUrlExtractError('Não foi possível ler o conteúdo automaticamente desta página. Você pode copiar o texto da página e colar diretamente na aba "Repurpose".');
+    } finally {
+      setIsExtractingUrl(false);
+    }
   };
 
   const loadedCarouselIdRef = useRef<string | null>(null);
@@ -586,6 +858,34 @@ export default function GeneratorPage() {
       
       await set('carousel_history', updatedHistory);
       localStorage.removeItem('carousel_history');
+
+      // Sincronização na Nuvem (Firestore)
+      if (user?.uid) {
+        try {
+          const sanitizedSlides = (historyItem.slides || []).map(s => {
+            let img = s.imageUrl;
+            if (img && img.startsWith('data:') && img.length > 200000) {
+              img = undefined;
+            }
+            let bgImg = s.backgroundImage;
+            if (bgImg && bgImg.startsWith('data:') && bgImg.length > 200000) {
+              bgImg = undefined;
+            }
+            return { ...s, imageUrl: img, backgroundImage: bgImg };
+          });
+
+          await setDoc(doc(db, 'users', user.uid, 'carousels', historyItem.id), {
+            ...historyItem,
+            slides: sanitizedSlides,
+            userId: user.uid,
+            isCloudSynced: true,
+            updatedAt: Date.now()
+          }, { merge: true });
+          setIsCloudSynced(true);
+        } catch (cloudErr) {
+          console.warn("Falha ao sincronizar carrossel no Firestore:", cloudErr);
+        }
+      }
     } catch (e) {
       console.error('Failed to save to history', e);
     }
@@ -633,8 +933,8 @@ export default function GeneratorPage() {
       return;
     }
 
-    if (creationMode === 'repurpose' && !longContentText.trim()) {
-      setErrorMessage('Por favor, cole o texto longo, artigo ou transcrição de vídeo.');
+    if ((creationMode === 'repurpose' || creationMode === 'url') && !longContentText.trim()) {
+      setErrorMessage(creationMode === 'url' ? 'Por favor, insira uma URL e clique em "Extrair" primeiro.' : 'Por favor, cole o texto longo, artigo ou transcrição de vídeo.');
       return;
     }
 
@@ -682,8 +982,8 @@ export default function GeneratorPage() {
           numSlides,
           includeImages
         );
-      } else if (creationMode === 'repurpose' && longContentText.trim()) {
-        setProgressText('Destilando e sintetizando texto longo...');
+      } else if ((creationMode === 'repurpose' || creationMode === 'url') && longContentText.trim()) {
+        setProgressText(creationMode === 'url' ? 'Convertendo artigo da web em carrossel...' : 'Destilando e sintetizando texto longo...');
         finalSlides = await generateFromLongContent(
           longContentText,
           numSlides,
@@ -1103,7 +1403,7 @@ export default function GeneratorPage() {
             }
 
             const dataUrl = await toPng(el, {
-              pixelRatio: 3,
+              pixelRatio: exportQuality === '2x' ? 2 : 3,
               width: exportWidth,
               height: exportHeight,
               cacheBust: true,
@@ -1246,7 +1546,7 @@ export default function GeneratorPage() {
                   <label className="text-xs font-semibold text-[rgba(240,240,240,0.6)] uppercase tracking-wider flex items-center gap-1">
                     <Sparkles size={13} className="text-[#6C63FF]" /> Modo de Criação
                   </label>
-                  <div className="grid grid-cols-3 gap-1.5 p-1 bg-[#0A0A0A] border border-[rgba(255,255,255,0.08)] rounded-xl">
+                  <div className="grid grid-cols-2 gap-1.5 p-1 bg-[#0A0A0A] border border-[rgba(255,255,255,0.08)] rounded-xl">
                     <button
                       type="button"
                       onClick={() => setCreationMode('topic')}
@@ -1282,6 +1582,18 @@ export default function GeneratorPage() {
                     >
                       <FileText size={14} />
                       <span>Repurpose</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCreationMode('url')}
+                      className={`py-2 px-1 rounded-lg text-xs font-semibold transition-all flex flex-col items-center gap-1 cursor-pointer ${
+                        creationMode === 'url'
+                          ? 'bg-gradient-to-r from-[#6C63FF] to-[#FF6584] text-white shadow-[0_0_10px_rgba(108,99,255,0.3)]'
+                          : 'text-[rgba(240,240,240,0.6)] hover:text-white'
+                      }`}
+                    >
+                      <Globe size={14} />
+                      <span>Link / URL</span>
                     </button>
                   </div>
                 </div>
@@ -1379,6 +1691,61 @@ export default function GeneratorPage() {
                       placeholder="Cole aqui o artigo, transcrição de vídeo ou notas completas..."
                       className="w-full p-3 bg-[#111111] border border-[rgba(255,255,255,0.1)] rounded-lg text-xs min-h-[120px] focus:border-[#6C63FF] outline-none text-white placeholder:text-[rgba(255,255,255,0.2)]"
                     />
+                  </div>
+                )}
+
+                {creationMode === 'url' && (
+                  <div className="flex flex-col gap-3 p-3 bg-[#0A0A0A] border border-[#6C63FF]/30 rounded-xl animate-fade-in">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold text-white flex items-center gap-1.5">
+                        <Globe size={13} className="text-[#6C63FF]" /> Artigo Web / Blog / Notícia
+                      </label>
+                      <span className="text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                        Jina AI Reader
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-[rgba(240,240,240,0.5)]">
+                      Cole o link de um artigo ou notícia da web para converter em carrossel automaticamente.
+                    </p>
+
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center gap-2">
+                        <input 
+                          type="url"
+                          value={urlInput}
+                          onChange={(e) => setUrlInput(e.target.value)}
+                          placeholder="https://exemplo.com/artigo-ou-noticia"
+                          className="flex-1 p-2.5 bg-[#111111] border border-[rgba(255,255,255,0.1)] rounded-lg text-xs text-white placeholder:text-[rgba(255,255,255,0.2)] focus:border-[#6C63FF] outline-none"
+                          onKeyDown={(e) => e.key === 'Enter' && handleExtractFromUrl()}
+                        />
+                        <button
+                          type="button"
+                          onClick={handleExtractFromUrl}
+                          disabled={isExtractingUrl || !urlInput.trim()}
+                          className="px-3 py-2.5 bg-[#6C63FF] hover:bg-[#5850e6] text-white rounded-lg text-xs font-medium disabled:opacity-50 transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer"
+                        >
+                          {isExtractingUrl ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                          <span>{isExtractingUrl ? 'Lendo...' : 'Extrair'}</span>
+                        </button>
+                      </div>
+
+                      {urlExtractError && (
+                        <div className="text-[11px] text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg p-2.5 leading-relaxed">
+                          ⚠️ {urlExtractError}
+                        </div>
+                      )}
+
+                      {urlExtractSuccess && (
+                        <div className="text-[11px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-2.5 flex flex-col gap-1">
+                          <div className="flex items-center gap-1.5 font-semibold">
+                            <Check size={13} /> Conteúdo extraído com sucesso! ({extractedWordCount} palavras)
+                          </div>
+                          <div className="text-[10px] text-[rgba(240,240,240,0.6)] line-clamp-2 italic">
+                            "{topic}"
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -1783,6 +2150,88 @@ export default function GeneratorPage() {
         
         {openSections.brand && (
           <div className="p-4 flex flex-col gap-4 border-t border-[rgba(255,255,255,0.06)]">
+            {/* Seletor de Brand Kits (Multi-Marcas) */}
+            <div className="flex flex-col gap-2 p-3 bg-[#0A0A0A] border border-[rgba(255,255,255,0.08)] rounded-xl">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-white flex items-center gap-1.5">
+                  <Folder size={14} className="text-[#6C63FF]" /> Perfis de Marca (Brand Kits)
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setIsSavingBrandKit(!isSavingBrandKit)}
+                  className="text-[10px] text-[#A39CFF] hover:text-white bg-[rgba(108,99,255,0.15)] hover:bg-[rgba(108,99,255,0.25)] border border-[rgba(108,99,255,0.3)] px-2 py-1 rounded transition-colors flex items-center gap-1 cursor-pointer font-medium"
+                >
+                  <Plus size={11} /> Salvar Atual
+                </button>
+              </div>
+
+              {/* Input para Salvar Novo Brand Kit */}
+              {isSavingBrandKit && (
+                <div className="flex items-center gap-2 pt-1 pb-1 animate-fade-in">
+                  <input
+                    type="text"
+                    value={newBrandKitName}
+                    onChange={(e) => setNewBrandKitName(e.target.value)}
+                    placeholder="Nome do perfil (ex: Dr. Carlos, Loja Glow)..."
+                    className="flex-1 p-2 bg-[#111111] border border-[#6C63FF]/50 rounded-lg text-xs text-white outline-none focus:border-[#6C63FF]"
+                    onKeyDown={(e) => e.key === 'Enter' && handleSaveBrandKit()}
+                    autoFocus
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSaveBrandKit}
+                    className="px-3 py-2 bg-[#6C63FF] hover:bg-[#5850e6] text-white rounded-lg text-xs font-semibold shrink-0 cursor-pointer"
+                  >
+                    Salvar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsSavingBrandKit(false)}
+                    className="p-2 text-[rgba(255,255,255,0.4)] hover:text-white text-xs cursor-pointer"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              )}
+
+              {/* Lista / Seleção de Brand Kits */}
+              {brandKits.length > 0 ? (
+                <div className="flex flex-col gap-1.5 mt-1">
+                  <div className="flex flex-wrap gap-1.5">
+                    {brandKits.map((kit) => (
+                      <div
+                        key={kit.id}
+                        onClick={() => handleSelectBrandKit(kit)}
+                        className={`group flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs cursor-pointer transition-all ${
+                          selectedBrandKitId === kit.id
+                            ? 'bg-[rgba(108,99,255,0.2)] border-[#6C63FF] text-white font-medium shadow-[0_0_10px_rgba(108,99,255,0.2)]'
+                            : 'bg-[#111111] border-[rgba(255,255,255,0.06)] text-[rgba(255,255,255,0.7)] hover:border-[rgba(255,255,255,0.2)] hover:text-white'
+                        }`}
+                      >
+                        <span 
+                          className="w-2.5 h-2.5 rounded-full shrink-0 border border-white/20"
+                          style={{ backgroundColor: kit.primaryColor || '#6C63FF' }}
+                        />
+                        <span className="truncate max-w-[110px]">{kit.name}</span>
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteBrandKit(kit.id, e)}
+                          className="opacity-0 group-hover:opacity-100 text-[rgba(255,255,255,0.4)] hover:text-red-400 transition-opacity ml-1 p-0.5"
+                          title="Excluir perfil"
+                        >
+                          <X size={11} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-[10px] text-[rgba(240,240,240,0.4)]">
+                  Nenhum perfil de marca salvo. Configure abaixo e clique em "+ Salvar Atual" para alternar com 1 clique.
+                </p>
+              )}
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-medium text-[rgba(240,240,240,0.6)]">Nome da Marca</label>
@@ -2431,6 +2880,42 @@ export default function GeneratorPage() {
             </>
           )}
 
+          {/* Indicador de Sincronização na Nuvem */}
+          {user && (
+            <div className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all ${
+              isCloudSynced 
+                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
+                : 'bg-[rgba(255,255,255,0.05)] border-[rgba(255,255,255,0.1)] text-[rgba(255,255,255,0.6)]'
+            }`}>
+              <Cloud size={14} className={isCloudSynced ? 'text-emerald-400' : 'text-gray-400'} />
+              <span>{isCloudSynced ? 'Nuvem Conectada' : 'Salvo Local'}</span>
+            </div>
+          )}
+
+          {/* Seletor de Resolução de Exportação */}
+          <div className="hidden sm:flex items-center bg-[#161616] border border-[rgba(255,255,255,0.1)] rounded-lg p-0.5 text-xs">
+            <button
+              type="button"
+              onClick={() => setExportQuality('2x')}
+              className={`px-2 py-1 rounded transition-colors cursor-pointer ${
+                exportQuality === '2x' ? 'bg-[#6C63FF] text-white font-semibold' : 'text-[rgba(255,255,255,0.6)] hover:text-white'
+              }`}
+              title="Resolução HD (1080p)"
+            >
+              HD (2x)
+            </button>
+            <button
+              type="button"
+              onClick={() => setExportQuality('3x')}
+              className={`px-2 py-1 rounded transition-colors cursor-pointer ${
+                exportQuality === '3x' ? 'bg-[#6C63FF] text-white font-semibold' : 'text-[rgba(255,255,255,0.6)] hover:text-white'
+              }`}
+              title="Resolução Ultra HD / Retina 4K"
+            >
+              Ultra HD (3x)
+            </button>
+          </div>
+
           <button 
             onClick={handleExport}
             disabled={slides.length === 0 || isExporting}
@@ -2467,7 +2952,74 @@ export default function GeneratorPage() {
           )}
 
           {slides.length > 0 ? (
-            <div className="w-full max-w-[85vw] lg:max-w-none pb-24 lg:pb-0">
+            <div className="w-full max-w-[85vw] lg:max-w-none pb-24 lg:pb-0 flex flex-col items-center">
+              {/* Barra Flutuante de Gerenciamento e Reordenação de Slides */}
+              <div className="flex flex-wrap items-center justify-between gap-3 bg-[#161616]/95 backdrop-blur-md border border-[rgba(255,255,255,0.08)] rounded-2xl px-4 py-2.5 mb-6 w-full max-w-3xl shadow-2xl animate-fade-in">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-white uppercase tracking-wider font-['Syne']">
+                    Slide <span className="text-[#6C63FF]">{currentIndex + 1}</span> de {slides.length}
+                  </span>
+                  <span className="text-[10px] bg-[rgba(255,255,255,0.08)] px-2 py-0.5 rounded text-[rgba(255,255,255,0.7)] font-medium uppercase">
+                    {slides[currentIndex]?.type || 'slide'}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleMoveSlide(currentIndex, 'prev')}
+                    disabled={currentIndex === 0}
+                    className="p-1.5 px-2 rounded-lg bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.12)] text-white disabled:opacity-30 disabled:pointer-events-none transition-all flex items-center gap-1 text-xs cursor-pointer"
+                    title="Mover slide para a esquerda"
+                  >
+                    <ArrowLeft size={14} />
+                    <span className="hidden sm:inline text-[11px] font-medium">Mover</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleMoveSlide(currentIndex, 'next')}
+                    disabled={currentIndex === slides.length - 1}
+                    className="p-1.5 px-2 rounded-lg bg-[rgba(255,255,255,0.05)] hover:bg-[rgba(255,255,255,0.12)] text-white disabled:opacity-30 disabled:pointer-events-none transition-all flex items-center gap-1 text-xs cursor-pointer"
+                    title="Mover slide para a direita"
+                  >
+                    <span className="hidden sm:inline text-[11px] font-medium">Mover</span>
+                    <ArrowRight size={14} />
+                  </button>
+
+                  <div className="w-[1px] h-4 bg-[rgba(255,255,255,0.1)] mx-1" />
+
+                  <button
+                    type="button"
+                    onClick={() => handleDuplicateSlide(currentIndex)}
+                    className="p-1.5 px-2.5 rounded-lg bg-[rgba(108,99,255,0.15)] hover:bg-[rgba(108,99,255,0.25)] border border-[rgba(108,99,255,0.3)] text-[#A39CFF] transition-all flex items-center gap-1 text-xs cursor-pointer"
+                    title="Duplicar este slide"
+                  >
+                    <Copy size={13} />
+                    <span className="hidden sm:inline text-[11px] font-medium">Duplicar</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleAddSlide}
+                    className="p-1.5 px-2.5 rounded-lg bg-[rgba(255,255,255,0.08)] hover:bg-[rgba(255,255,255,0.15)] text-white transition-all flex items-center gap-1 text-xs cursor-pointer"
+                    title="Adicionar novo slide"
+                  >
+                    <Plus size={14} />
+                    <span className="hidden sm:inline text-[11px] font-medium">Novo Slide</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteSlide(currentIndex)}
+                    disabled={slides.length <= 1}
+                    className="p-1.5 px-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer"
+                    title="Excluir slide atual"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+
               <CarouselPreview 
                 slides={slides}
                 palette={palette}
@@ -2501,11 +3053,51 @@ export default function GeneratorPage() {
         <aside className={`w-full lg:w-80 bg-[#0A0A0A] border-l border-[rgba(255,255,255,0.06)] overflow-y-auto ${activeTab === 'edit' ? 'block' : 'hidden lg:block'}`}>
           {slides.length > 0 ? (
             <div className="p-6 pb-24 lg:pb-6">
-              <div className="mb-6 flex items-center justify-between">
-                <h2 className="font-['Syne'] font-bold text-lg">Slide {currentIndex + 1} de {slides.length}</h2>
-                <span className="text-[10px] font-bold px-2 py-1 bg-[rgba(255,255,255,0.1)] rounded uppercase tracking-wider">
-                  {slides[currentIndex].type}
-                </span>
+              <div className="mb-6 flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <h2 className="font-['Syne'] font-bold text-lg">Slide {currentIndex + 1} de {slides.length}</h2>
+                  <span className="text-[10px] font-bold px-2 py-1 bg-[rgba(255,255,255,0.1)] rounded uppercase tracking-wider">
+                    {slides[currentIndex].type}
+                  </span>
+                </div>
+                {/* Ações de Reordenação e Duplicação no Painel */}
+                <div className="flex items-center gap-1.5 pt-1 border-t border-[rgba(255,255,255,0.06)]">
+                  <button
+                    type="button"
+                    onClick={() => handleMoveSlide(currentIndex, 'prev')}
+                    disabled={currentIndex === 0}
+                    className="flex-1 py-1 px-1.5 rounded bg-[#161616] hover:bg-[#222] border border-[rgba(255,255,255,0.08)] text-[11px] text-[rgba(255,255,255,0.8)] disabled:opacity-30 disabled:pointer-events-none flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                    title="Mover slide para a esquerda"
+                  >
+                    <ArrowLeft size={12} /> Anterior
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleMoveSlide(currentIndex, 'next')}
+                    disabled={currentIndex === slides.length - 1}
+                    className="flex-1 py-1 px-1.5 rounded bg-[#161616] hover:bg-[#222] border border-[rgba(255,255,255,0.08)] text-[11px] text-[rgba(255,255,255,0.8)] disabled:opacity-30 disabled:pointer-events-none flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                    title="Mover slide para a direita"
+                  >
+                    Próximo <ArrowRight size={12} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDuplicateSlide(currentIndex)}
+                    className="p-1 px-2 rounded bg-[rgba(108,99,255,0.15)] hover:bg-[rgba(108,99,255,0.25)] border border-[rgba(108,99,255,0.3)] text-[#A39CFF] text-[11px] transition-colors cursor-pointer"
+                    title="Duplicar slide atual"
+                  >
+                    <Copy size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteSlide(currentIndex)}
+                    disabled={slides.length <= 1}
+                    className="p-1 px-2 rounded bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 text-[11px] disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer"
+                    title="Excluir slide atual"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
               </div>
               <SlideEditor 
                 slide={slides[currentIndex]} 

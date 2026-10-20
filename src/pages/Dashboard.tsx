@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Sparkles, Grid, Pencil, Trash2, Copy, Play, Folder, ArrowLeft, Wand2, LogOut, Shield, DollarSign } from 'lucide-react';
+import { Sparkles, Grid, Pencil, Trash2, Copy, Play, Folder, ArrowLeft, Wand2, LogOut, Shield, DollarSign, Cloud, RefreshCw } from 'lucide-react';
 import { get, set } from 'idb-keyval';
 import { useAuth } from '../contexts/AuthContext';
+import { db } from '../lib/firebase';
+import { collection, getDocs, doc, deleteDoc, setDoc } from 'firebase/firestore';
 
 export interface CarouselHistoryItem {
   id: string;
@@ -27,18 +29,20 @@ export interface CarouselHistoryItem {
   customPhrases?: string;
   brandAvatar?: { data: string, mimeType: string, url: string } | null;
   useBrandAvatar?: boolean;
+  isCloudSynced?: boolean;
   createdAt: number;
 }
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { logout, profile } = useAuth();
+  const { user, logout, profile } = useAuth();
   const [history, setHistory] = useState<CarouselHistoryItem[]>([]);
   const [selectedProfile, setSelectedProfile] = useState<string | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   useEffect(() => {
     loadHistory();
-  }, []);
+  }, [user]);
 
   const loadHistory = async () => {
     try {
@@ -51,11 +55,44 @@ export default function Dashboard() {
         await set('carousel_history', historyData);
         localStorage.removeItem('carousel_history');
       } else {
-        const idbSaved = await get('carousel_history');
-        if (idbSaved) {
+        const idbSaved = await get<CarouselHistoryItem[]>('carousel_history');
+        if (idbSaved && Array.isArray(idbSaved)) {
           historyData = idbSaved;
         }
       }
+
+      // Sincroniza com a nuvem no Firestore se o usuário estiver logado
+      if (user?.uid) {
+        try {
+          const snapshot = await getDocs(collection(db, 'users', user.uid, 'carousels'));
+          const cloudItems: CarouselHistoryItem[] = [];
+          snapshot.forEach(docSnap => {
+            const data = docSnap.data() as CarouselHistoryItem;
+            cloudItems.push({ ...data, id: docSnap.id, isCloudSynced: true });
+          });
+
+          if (cloudItems.length > 0) {
+            const itemsMap = new Map<string, CarouselHistoryItem>();
+            historyData.forEach(item => itemsMap.set(item.id, item));
+            
+            cloudItems.forEach(item => {
+              const local = itemsMap.get(item.id);
+              if (!local || (item.createdAt || 0) >= (local.createdAt || 0)) {
+                itemsMap.set(item.id, { ...item, isCloudSynced: true });
+              } else {
+                itemsMap.set(item.id, { ...local, isCloudSynced: true });
+              }
+            });
+
+            const merged = Array.from(itemsMap.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+            historyData = merged;
+            await set('carousel_history', merged);
+          }
+        } catch (cloudErr) {
+          console.warn("Aviso ao carregar histórico da nuvem:", cloudErr);
+        }
+      }
+
       setHistory(historyData);
     } catch (e) {
       console.error('Failed to load history', e);
@@ -66,17 +103,35 @@ export default function Dashboard() {
     const updated = history.filter(item => item.id !== id);
     setHistory(updated);
     await set('carousel_history', updated);
+
+    if (user?.uid) {
+      try {
+        await deleteDoc(doc(db, 'users', user.uid, 'carousels', id));
+      } catch (err) {
+        console.warn("Falha ao deletar carrossel da nuvem:", err);
+      }
+    }
   };
 
   const duplicateItem = async (item: CarouselHistoryItem) => {
-    const newItem = {
+    const newItem: CarouselHistoryItem = {
       ...item,
       id: Math.random().toString(36).substring(7),
-      createdAt: Date.now()
+      title: `${item.title} (Cópia)`,
+      createdAt: Date.now(),
+      isCloudSynced: !!user?.uid
     };
     const updated = [newItem, ...history];
     setHistory(updated);
     await set('carousel_history', updated);
+
+    if (user?.uid) {
+      try {
+        await setDoc(doc(db, 'users', user.uid, 'carousels', newItem.id), newItem);
+      } catch (e) {
+        console.warn("Falha ao duplicar na nuvem:", e);
+      }
+    }
   };
 
   const formatRelativeTime = (timestamp: number) => {
@@ -144,6 +199,19 @@ export default function Dashboard() {
             >
               <DollarSign className="w-4 h-4" />
               Painel Afiliados
+            </button>
+          )}
+          {user && (
+            <button
+              onClick={() => {
+                setIsSyncing(true);
+                loadHistory().finally(() => setIsSyncing(false));
+              }}
+              className="flex items-center gap-1.5 text-xs font-medium text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 px-3 py-1.5 rounded-full border border-emerald-500/20 transition-all cursor-pointer"
+              title="Sincronizar com a nuvem"
+            >
+              <Cloud className={`w-3.5 h-3.5 ${isSyncing ? 'animate-pulse text-emerald-300' : ''}`} />
+              <span className="hidden sm:inline">{isSyncing ? 'Sincronizando...' : 'Nuvem Conectada'}</span>
             </button>
           )}
           <div className="flex items-center gap-2 bg-[rgba(255,255,255,0.05)] px-3 py-1.5 rounded-full border border-[rgba(255,255,255,0.1)]">
@@ -260,8 +328,15 @@ export default function Dashboard() {
                 <div key={item.id} className="bg-[#161616] border border-[rgba(255,255,255,0.06)] rounded-2xl overflow-hidden group hover:border-[rgba(255,255,255,0.15)] transition-colors flex flex-col">
                   {/* Thumbnail */}
                   <div className="aspect-square bg-gradient-to-br from-[#1A1A1A] to-[#0D0D0D] p-4 relative flex items-center justify-center border-b border-[rgba(255,255,255,0.06)]">
-                    <div className="absolute top-3 left-3 bg-[rgba(0,0,0,0.5)] backdrop-blur-sm px-2 py-1 rounded text-[10px] font-medium uppercase tracking-wider text-[rgba(255,255,255,0.8)]">
-                      IA
+                    <div className="absolute top-3 left-3 flex items-center gap-1.5">
+                      <span className="bg-[rgba(0,0,0,0.5)] backdrop-blur-sm px-2 py-1 rounded text-[10px] font-medium uppercase tracking-wider text-[rgba(255,255,255,0.8)]">
+                        IA
+                      </span>
+                      {item.isCloudSynced && (
+                        <span className="bg-emerald-950/80 border border-emerald-500/30 text-emerald-300 backdrop-blur-sm px-1.5 py-0.5 rounded text-[9px] font-semibold flex items-center gap-1" title="Sincronizado na Nuvem">
+                          <Cloud className="w-2.5 h-2.5" /> Nuvem
+                        </span>
+                      )}
                     </div>
                     <div className="absolute top-3 right-3 bg-[rgba(0,0,0,0.5)] backdrop-blur-sm px-2 py-1 rounded text-[10px] font-medium text-[rgba(255,255,255,0.8)]">
                       {item.numSlides} slides
