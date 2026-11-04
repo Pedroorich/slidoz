@@ -24,7 +24,7 @@ export interface CarouselHistoryItem {
   isSeamless?: boolean;
   logoUrl?: string | null;
   format?: 'portrait' | 'square' | 'stories';
-  generationLayout?: 'default' | 'forbes' | 'twitter' | 'frases';
+  generationLayout?: 'default' | 'forbes' | 'twitter' | 'frases' | 'noticia' | 'apple_notes' | 'dark_saas' | 'chat' | 'brutalismo';
   phraseCategory?: string;
   customPhrases?: string;
   brandAvatar?: { data: string, mimeType: string, url: string } | null;

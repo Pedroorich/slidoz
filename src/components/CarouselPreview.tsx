@@ -108,7 +108,18 @@ const Slide = memo(function Slide({ slide, slides = [], index, total, palette, b
   const isProblema = slide.layoutModel === 'problema';
   const isSolucao = slide.layoutModel === 'solucao';
   const isTimeline = slide.layoutModel === 'timeline';
-  const hasCustomLayout = isRanking || isAntesDepois || isDadoContexto || isChecklist || isDepoimento || isPassoAPasso || isComparativo || isCitacaoEspecialista || isProblema || isSolucao || isTimeline;
+
+  // Novos Modelos de Design
+  const isNoticia = slide.layoutModel === 'noticia';
+  const isAppleNotes = slide.layoutModel === 'apple_notes';
+  const isDarkSaas = slide.layoutModel === 'dark_saas';
+  const isChat = slide.layoutModel === 'chat';
+  const isBrutalismo = slide.layoutModel === 'brutalismo';
+  const isNotificacaoPush = slide.layoutModel === 'notificacao_push';
+  const isBentoGrid = slide.layoutModel === 'bento_grid';
+  const isQuiz = slide.layoutModel === 'quiz';
+
+  const hasCustomLayout = isRanking || isAntesDepois || isDadoContexto || isChecklist || isDepoimento || isPassoAPasso || isComparativo || isCitacaoEspecialista || isProblema || isSolucao || isTimeline || isNoticia || isAppleNotes || isDarkSaas || isChat || isBrutalismo || isNotificacaoPush || isBentoGrid || isQuiz;
 
   const passoSlides = slides.filter((s: any) => s.layoutModel === 'passo_a_passo');
   const passoIndex = passoSlides.findIndex((s: any) => s.id === slide.id);
@@ -136,6 +147,25 @@ const Slide = memo(function Slide({ slide, slides = [], index, total, palette, b
     const twitterBg = slide.background === 'light' ? '#ffffff' : '#15202B';
     bgStyle = { backgroundColor: twitterBg };
     bgColorHex = twitterBg;
+  } else if (isAppleNotes) {
+    const notesBg = slide.background === 'dark' ? '#1C1C1E' : '#F9F8F5';
+    bgStyle = { backgroundColor: notesBg };
+    bgColorHex = notesBg;
+  } else if (isDarkSaas) {
+    bgStyle = { backgroundColor: '#08080C' };
+    bgColorHex = '#08080C';
+  } else if (isChat) {
+    const chatBg = slide.background === 'light' ? '#EFEAE2' : '#0B141A';
+    bgStyle = { backgroundColor: chatBg };
+    bgColorHex = chatBg;
+  } else if (isBrutalismo) {
+    const brutBg = slide.background === 'light' ? '#FFFFFF' : '#000000';
+    bgStyle = { backgroundColor: brutBg };
+    bgColorHex = brutBg;
+  } else if (isNoticia) {
+    const newsBg = slide.background === 'light' ? '#FFFFFF' : '#0D0D0E';
+    bgStyle = { backgroundColor: newsBg };
+    bgColorHex = newsBg;
   } else if (isRanking || isAntesDepois || isProblema) {
     bgStyle = { backgroundColor: '#0D0D0D' };
     bgColorHex = '#0D0D0D';
@@ -163,6 +193,12 @@ const Slide = memo(function Slide({ slide, slides = [], index, total, palette, b
     textColor = isBgLight ? '#0F1419' : '#F7F9F9';
   } else if (isForbes) {
     textColor = '#ffffff';
+  } else if (isAppleNotes) {
+    textColor = isBgLight ? '#1C1C1E' : '#F2F2F7';
+  } else if (isDarkSaas) {
+    textColor = '#FFFFFF';
+  } else if (isBrutalismo) {
+    textColor = isBgLight ? '#000000' : '#FFFFFF';
   }
 
   let mutedTextColor = slide.contentColor || (isBgLight ? colord(palette.DARK_BG).alpha(0.7).toRgbString() : 'rgba(255,255,255,0.8)');
@@ -170,6 +206,12 @@ const Slide = memo(function Slide({ slide, slides = [], index, total, palette, b
     mutedTextColor = isBgLight ? '#536471' : '#8899A6';
   } else if (isForbes) {
     mutedTextColor = 'rgba(255, 255, 255, 0.65)';
+  } else if (isAppleNotes) {
+    mutedTextColor = isBgLight ? '#636366' : '#AEAEB2';
+  } else if (isDarkSaas) {
+    mutedTextColor = '#94A3B8';
+  } else if (isBrutalismo) {
+    mutedTextColor = isBgLight ? '#222222' : '#E0E0E0';
   }
 
   const twitterBorderColor = isBgLight ? '#EFF3F4' : '#38444D';
@@ -349,7 +391,7 @@ const Slide = memo(function Slide({ slide, slides = [], index, total, palette, b
       )}
 
       {/* Logo Lockup (First & Last) */}
-      {(isFirst || isLast) && brandName && brandName.trim() !== '' && !isTwitter && !isForbes && (
+      {(isFirst || isLast) && brandName && brandName.trim() !== '' && !isTwitter && !isForbes && !isNoticia && !isAppleNotes && !isChat && !isBrutalismo && (
         <div className="absolute top-8 left-9 flex items-center gap-3 z-20">
           {logoUrl ? (
             <img src={proxify(logoUrl)} alt={brandName} crossOrigin="anonymous" className="w-10 h-10 rounded-full object-cover shadow-sm" />
@@ -1362,6 +1404,529 @@ const Slide = memo(function Slide({ slide, slides = [], index, total, palette, b
         </div>
       )}
 
+      {/* Noticia / Breaking News Layout */}
+      {isNoticia && (
+        <div 
+          className="relative z-10 flex flex-col w-full h-full justify-between pt-6 pb-4"
+          style={{ transform: `translate(${slide.textOffsetX || 0}px, ${slide.textOffsetY || 0}px)` }}
+        >
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
+              <div className="flex items-center gap-2">
+                <span className="bg-red-600 text-white font-black px-2 py-0.5 rounded text-[10px] tracking-wider uppercase flex items-center gap-1.5 shadow-md">
+                  <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                  {slide.newsBadge || 'URGENTE'}
+                </span>
+                <span style={{ color: tagColor, fontSize: 11, fontWeight: 700, fontFamily: finalBodyFont, textTransform: 'uppercase' }}>
+                  {brandName || 'SLIDOZ NEWS'}
+                </span>
+              </div>
+              <span className="text-[10px] text-white/50 font-mono">
+                {slide.newsSource || 'Plantão • Ao Vivo'}
+              </span>
+            </div>
+
+            <h2 
+              style={{
+                color: textColor,
+                fontSize: (slide.title?.length || 0) > 60 ? 22 : 26,
+                fontWeight: 800,
+                fontFamily: finalTitleFont,
+                lineHeight: 1.15,
+                letterSpacing: '-0.5px'
+              }}
+              dangerouslySetInnerHTML={{ __html: slide.title || '' }}
+            />
+          </div>
+
+          {slide.imageUrl && (
+            <div className="w-full my-2 relative rounded-lg overflow-hidden border border-white/10 shadow-lg">
+              <img 
+                src={proxify(slide.imageUrl)} 
+                alt="Foto da Notícia" 
+                crossOrigin="anonymous" 
+                className="w-full h-40 object-cover" 
+              />
+              <div className="absolute bottom-0 inset-x-0 bg-black/70 backdrop-blur-sm px-2 py-1 text-[9px] text-white/70 italic">
+                Foto: Reprodução / {brandName}
+              </div>
+            </div>
+          )}
+
+          {slide.content && (
+            <p 
+              style={{ 
+                color: mutedTextColor, 
+                fontSize: slide.imageUrl ? 12 : 14, 
+                lineHeight: 1.5, 
+                fontFamily: finalBodyFont 
+              }}
+              dangerouslySetInnerHTML={{ __html: slide.content }}
+            />
+          )}
+
+          {slide.items && slide.items.length > 0 && (
+            <div className="flex flex-col gap-1.5 bg-white/[0.03] border border-white/10 rounded-lg p-2.5 my-1">
+              {slide.items.slice(0, 3).map((item: any, i: number) => (
+                <div key={i} className="flex items-start gap-2 text-xs">
+                  <span className="text-red-500 font-bold shrink-0">•</span>
+                  <span style={{ color: textColor, fontSize: 11.5, fontFamily: finalBodyFont }} dangerouslySetInnerHTML={{ __html: item.label || item }} />
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="flex items-center justify-between border-t border-white/10 pt-2 text-[10px] text-white/50 font-medium">
+            <span>{handle || '@slidoz'}</span>
+            <span className="flex items-center gap-1 text-red-400 font-bold">
+              ARRASTE PARA LER MAIS &rarr;
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Apple Notes Layout */}
+      {isAppleNotes && (
+        <div 
+          className="relative z-10 flex flex-col w-full h-full justify-between pt-6 pb-4 select-none"
+          style={{ transform: `translate(${slide.textOffsetX || 0}px, ${slide.textOffsetY || 0}px)` }}
+        >
+          <div className="flex items-center justify-between border-b border-black/5 dark:border-white/10 pb-3">
+            <div className="flex items-center gap-1 text-[#E5A93C] text-xs font-semibold cursor-pointer">
+              <span className="text-base leading-none">&lt;</span>
+              <span>{slide.notesFolder || 'Notas'}</span>
+            </div>
+            <span className="text-[10px] text-neutral-400 font-medium">
+              {slide.notesDate || 'Hoje, 14:20'}
+            </span>
+            <div className="flex items-center gap-2 text-[#E5A93C]">
+              <span className="text-xs">⋯</span>
+            </div>
+          </div>
+
+          <div className="flex-1 flex flex-col gap-3 py-3">
+            <div>
+              <span 
+                className="text-black font-bold px-2 py-0.5 rounded-sm inline-block shadow-sm"
+                style={{
+                  backgroundColor: '#FFE600',
+                  fontSize: (slide.title?.length || 0) > 40 ? 20 : 24,
+                  fontFamily: finalTitleFont,
+                  lineHeight: 1.25
+                }}
+                dangerouslySetInnerHTML={{ __html: slide.title || '' }}
+              />
+            </div>
+
+            {slide.content && (
+              <p 
+                style={{ 
+                  color: mutedTextColor, 
+                  fontSize: 13.5, 
+                  lineHeight: 1.55, 
+                  fontFamily: finalBodyFont 
+                }}
+                dangerouslySetInnerHTML={{ __html: slide.content }}
+              />
+            )}
+
+            {slide.items && slide.items.length > 0 && (
+              <div className="flex flex-col gap-2.5 mt-1">
+                {slide.items.map((item: any, i: number) => (
+                  <div key={i} className="flex items-start gap-2.5">
+                    <span className="w-4 h-4 rounded-full border-2 border-[#E5A93C] flex items-center justify-center shrink-0 mt-0.5">
+                      {i === 0 && <span className="w-2 h-2 rounded-full bg-[#E5A93C]" />}
+                    </span>
+                    <span 
+                      style={{ color: textColor, fontSize: 13, fontFamily: finalBodyFont }} 
+                      dangerouslySetInnerHTML={{ __html: item.label || item }}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center justify-between border-t border-black/5 dark:border-white/10 pt-2 text-[10px] text-neutral-400">
+            <span>{brandName ? `Por ${brandName}` : 'Anotação rápida'}</span>
+            <span>{handle || ''}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Dark SaaS Layout */}
+      {isDarkSaas && (
+        <div 
+          className="relative z-10 flex flex-col w-full h-full justify-between pt-6 pb-4 select-none"
+          style={{ transform: `translate(${slide.textOffsetX || 0}px, ${slide.textOffsetY || 0}px)` }}
+        >
+          <div className="absolute -top-10 left-1/2 -translate-x-1/2 w-72 h-40 bg-indigo-500/15 blur-3xl pointer-events-none rounded-full" />
+
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono border border-indigo-500/30 bg-indigo-500/10 text-indigo-400 flex items-center gap-1.5 backdrop-blur-md">
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
+                {slide.tag || 'SYSTEM • PRO'}
+              </span>
+            </div>
+            <span className="text-[10px] text-white/40 font-mono">{brandName || 'SLIDOZ'}</span>
+          </div>
+
+          <div className="flex-1 flex flex-col justify-center my-3 bg-white/[0.03] backdrop-blur-xl border border-white/[0.08] shadow-[0_8px_32px_rgba(0,0,0,0.6)] rounded-2xl p-5 gap-3 relative overflow-hidden">
+            <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-indigo-500/50 to-transparent" />
+            
+            <h2 
+              style={{
+                color: '#FFFFFF',
+                fontSize: (slide.title?.length || 0) > 40 ? 22 : 26,
+                fontWeight: 700,
+                fontFamily: finalTitleFont,
+                lineHeight: 1.2
+              }}
+              dangerouslySetInnerHTML={{ __html: slide.title || '' }}
+            />
+
+            {slide.content && (
+              <p 
+                style={{ color: '#94A3B8', fontSize: 13, lineHeight: 1.5, fontFamily: finalBodyFont }}
+                dangerouslySetInnerHTML={{ __html: slide.content }}
+              />
+            )}
+
+            {slide.items && slide.items.length > 0 && (
+              <div className="grid grid-cols-1 gap-2 mt-1">
+                {slide.items.map((item: any, i: number) => (
+                  <div key={i} className="flex items-center gap-2.5 bg-black/40 border border-white/5 rounded-lg px-3 py-2 text-xs">
+                    <span className="text-indigo-400 font-mono text-[10px]">0{i + 1}</span>
+                    <span className="text-white/90 font-medium" dangerouslySetInnerHTML={{ __html: item.label || item }} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center justify-between text-[10px] text-white/40 font-mono">
+            <span>{handle || '@slidoz'}</span>
+            <span className="text-indigo-400 flex items-center gap-1">DESLIZE &rarr;</span>
+          </div>
+        </div>
+      )}
+
+      {/* Chat / WhatsApp Layout */}
+      {isChat && (
+        <div 
+          className="relative z-10 flex flex-col w-full h-full justify-between pt-4 pb-3 select-none"
+          style={{ transform: `translate(${slide.textOffsetX || 0}px, ${slide.textOffsetY || 0}px)` }}
+        >
+          <div className="flex items-center justify-between bg-[#202C33] text-white px-3.5 py-2.5 rounded-xl shadow-md border border-white/5">
+            <div className="flex items-center gap-2.5">
+              <span className="text-xs text-white/70">&lt;</span>
+              {logoUrl ? (
+                <img src={proxify(logoUrl)} alt="Avatar" crossOrigin="anonymous" className="w-8 h-8 rounded-full object-cover" />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-[#005C4B] flex items-center justify-center text-xs font-bold text-white">
+                  {brandName.charAt(0).toUpperCase()}
+                </div>
+              )}
+              <div className="flex flex-col text-left">
+                <span className="text-xs font-semibold leading-tight text-white">{brandName || 'Especialista'}</span>
+                <span className="text-[9px] text-[#25D366] font-medium leading-none flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#25D366]" /> online
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 text-white/60 text-xs">
+              <span>📹</span>
+              <span>📞</span>
+            </div>
+          </div>
+
+          {slide.title && (
+            <div className="text-center my-1">
+              <span className="bg-[#182229] border border-white/10 text-white/70 px-3 py-1 rounded-full text-[10px] font-medium inline-block">
+                {slide.title.replace(/<[^>]*>/g, '')}
+              </span>
+            </div>
+          )}
+
+          <div className="flex-1 flex flex-col justify-center gap-3 py-2">
+            <div className="flex flex-col max-w-[85%] bg-[#202C33] text-[#E9EDEF] rounded-2xl rounded-tl-none p-3 shadow-md border border-white/5 self-start">
+              <span className="text-[10px] text-[#53BDEB] font-semibold mb-0.5">Pergunta</span>
+              <p className="text-xs leading-relaxed" dangerouslySetInnerHTML={{ __html: slide.content || 'Como você conseguiu aumentar o engajamento tão rápido?' }} />
+              <span className="text-[8px] text-white/40 self-end mt-1">14:21</span>
+            </div>
+
+            <div className="flex flex-col max-w-[85%] bg-[#005C4B] text-[#E9EDEF] rounded-2xl rounded-tr-none p-3 shadow-md border border-emerald-500/20 self-end ml-auto">
+              <span className="text-[10px] text-emerald-200 font-semibold mb-0.5">{brandName || 'Você'}</span>
+              <p className="text-xs leading-relaxed">
+                {slide.items && slide.items[0]?.label 
+                  ? slide.items[0].label 
+                  : 'Focando em formatos de alta retenção visual e narrativa direta ao ponto!'}
+              </p>
+              <div className="flex items-center justify-end gap-1 text-[8px] text-white/60 self-end mt-1">
+                <span>14:22</span>
+                <span className="text-[#53BDEB] font-bold">✓✓</span>
+              </div>
+            </div>
+
+            {slide.items && slide.items.length > 1 && (
+              <div className="flex items-center gap-3 bg-[#005C4B] text-white rounded-2xl rounded-tr-none px-3 py-2 self-end shadow-md max-w-[80%] border border-emerald-500/20">
+                <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center text-xs">
+                  ▶
+                </div>
+                <div className="flex flex-col flex-1">
+                  <div className="h-1 bg-white/40 rounded-full w-full overflow-hidden">
+                    <div className="w-1/2 h-full bg-white" />
+                  </div>
+                  <div className="flex justify-between text-[8px] text-white/70 mt-1">
+                    <span>0:42</span>
+                    <span className="text-[#53BDEB]">✓✓</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 bg-[#202C33] px-3 py-2 rounded-xl text-white/40 text-xs">
+            <span>Mensagem...</span>
+            <span className="ml-auto text-[#00A884]">➤</span>
+          </div>
+        </div>
+      )}
+
+      {/* Brutalismo Moderno Layout */}
+      {isBrutalismo && (
+        <div 
+          className="relative z-10 flex flex-col w-full h-full justify-between p-3 select-none"
+          style={{ transform: `translate(${slide.textOffsetX || 0}px, ${slide.textOffsetY || 0}px)` }}
+        >
+          <div className="border-4 border-white/90 p-4 flex-1 flex flex-col justify-between relative bg-black">
+            <div className="flex items-center justify-between border-b-2 border-white/20 pb-2">
+              <span className="bg-[#CCFF00] text-black font-black text-xs px-2 py-0.5 uppercase tracking-tighter shadow-[3px_3px_0px_#FFFFFF]">
+                {slide.tag || 'DROP EXCLUSIVO'}
+              </span>
+              <span className="text-xs font-mono font-bold text-white tracking-widest">{brandName.toUpperCase()}</span>
+            </div>
+
+            <div className="my-auto py-4">
+              <h2 
+                className="uppercase font-black text-white leading-none tracking-tight"
+                style={{
+                  fontSize: (slide.title?.length || 0) > 40 ? 28 : 34,
+                  fontFamily: finalTitleFont
+                }}
+                dangerouslySetInnerHTML={{ __html: slide.title || '' }}
+              />
+              {slide.content && (
+                <p 
+                  className="text-white/80 font-mono text-xs uppercase mt-3 leading-relaxed border-l-2 border-[#CCFF00] pl-2.5"
+                  dangerouslySetInnerHTML={{ __html: slide.content }}
+                />
+              )}
+            </div>
+
+            {slide.items && slide.items.length > 0 && (
+              <div className="flex flex-col gap-2 my-2">
+                {slide.items.slice(0, 3).map((item: any, i: number) => (
+                  <div key={i} className="flex items-center gap-2 bg-white text-black font-black text-xs p-2 shadow-[3px_3px_0px_#CCFF00]">
+                    <span className="bg-black text-white px-1.5 py-0.5 text-[10px]">#{i + 1}</span>
+                    <span className="uppercase truncate" dangerouslySetInnerHTML={{ __html: item.label || item }} />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="border-t-2 border-white/20 pt-2 flex items-center justify-between font-mono text-[10px] text-white/60">
+              <span>{handle || '@slidoz'}</span>
+              <span className="text-[#CCFF00] font-bold uppercase">&gt;&gt; ARRASTA</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notificacao Push Layout */}
+      {isNotificacaoPush && (
+        <div 
+          className="relative z-10 flex flex-col w-full h-full justify-between pt-8 pb-6 px-2 select-none"
+          style={{ transform: `translate(${slide.textOffsetX || 0}px, ${slide.textOffsetY || 0}px)` }}
+        >
+          <div className="flex flex-col items-center gap-0.5">
+            <span className="text-4xl font-light tracking-tight text-white/90 font-sans">
+              {slide.notificationTime || '09:41'}
+            </span>
+            <span className="text-[11px] text-white/60 font-medium capitalize">
+              quarta-feira, 24 de outubro
+            </span>
+          </div>
+
+          <div className="my-auto w-full bg-black/60 backdrop-blur-2xl border border-white/15 rounded-2xl p-3.5 shadow-2xl flex flex-col gap-1.5">
+            <div className="flex items-center justify-between text-white/60 text-[10px]">
+              <div className="flex items-center gap-1.5 font-medium">
+                <span className="w-4 h-4 rounded-md bg-gradient-to-tr from-[#6C63FF] to-[#FF6584] flex items-center justify-center text-[8px] text-white font-bold">
+                  ⚡
+                </span>
+                <span className="text-white/80 font-semibold">{slide.notificationApp || brandName || 'Instagram'}</span>
+              </div>
+              <span>agora</span>
+            </div>
+            <div className="flex flex-col text-left">
+              <span className="text-xs font-bold text-white leading-snug">
+                {slide.notificationTitle || 'Alerta Importante'}
+              </span>
+              <p className="text-xs text-white/80 leading-snug mt-0.5">
+                {slide.notificationMessage || slide.title || 'Você foi selecionado para desbloquear uma nova oportunidade.'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-col text-center gap-2">
+            <h3 
+              style={{ color: textColor, fontSize: 18, fontWeight: 700, fontFamily: finalTitleFont }}
+              dangerouslySetInnerHTML={{ __html: slide.title || '' }}
+            />
+            {slide.content && (
+              <p style={{ color: mutedTextColor, fontSize: 12.5, fontFamily: finalBodyFont }} dangerouslySetInnerHTML={{ __html: slide.content }} />
+            )}
+          </div>
+
+          <div className="flex flex-col items-center gap-1 text-[10px] text-white/40">
+            <span className="w-28 h-1 rounded-full bg-white/30" />
+            <span>Deslize para abrir &rarr;</span>
+          </div>
+        </div>
+      )}
+
+      {/* Bento Grid Layout */}
+      {isBentoGrid && (
+        <div 
+          className="relative z-10 flex flex-col w-full h-full justify-between pt-6 pb-4 select-none"
+          style={{ transform: `translate(${slide.textOffsetX || 0}px, ${slide.textOffsetY || 0}px)` }}
+        >
+          <div className="flex flex-col gap-1">
+            {slide.tag && (
+              <span style={{ color: tagColor, fontSize: 10, fontWeight: 700, letterSpacing: 1.5, textTransform: 'uppercase', fontFamily: finalBodyFont }}>
+                {slide.tag}
+              </span>
+            )}
+            <h2 
+              style={{ color: textColor, fontSize: 22, fontWeight: 700, fontFamily: finalTitleFont, lineHeight: 1.2 }}
+              dangerouslySetInnerHTML={{ __html: slide.title || '' }}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2.5 my-auto">
+            <div className="col-span-2 bg-white/[0.04] backdrop-blur-md border border-white/10 rounded-xl p-3.5 flex flex-col justify-between shadow-md">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xl">🔥</span>
+                <span className="text-[10px] text-indigo-400 font-mono font-bold bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">DESTAQUE</span>
+              </div>
+              <span className="text-sm font-bold text-white leading-tight">
+                {slide.bentoCards?.[0]?.title || slide.content || 'Estratégia de Alta Retenção'}
+              </span>
+              <span className="text-[11px] text-white/60 leading-snug mt-1">
+                {slide.bentoCards?.[0]?.subtitle || 'Prenda a atenção da audiência do início ao fim.'}
+              </span>
+            </div>
+
+            <div className="bg-white/[0.04] backdrop-blur-md border border-white/10 rounded-xl p-3 flex flex-col justify-between shadow-md">
+              <span className="text-lg">🚀</span>
+              <div>
+                <span className="text-2xl font-black text-white font-mono block">
+                  {slide.bentoCards?.[1]?.stat || '+340%'}
+                </span>
+                <span className="text-[10px] text-white/60 block leading-tight">
+                  {slide.bentoCards?.[1]?.title || 'Alcance Orgânico'}
+                </span>
+              </div>
+            </div>
+
+            <div className="bg-white/[0.04] backdrop-blur-md border border-white/10 rounded-xl p-3 flex flex-col justify-between shadow-md">
+              <span className="text-lg">⚡</span>
+              <div>
+                <span className="text-2xl font-black text-amber-400 font-mono block">
+                  {slide.bentoCards?.[2]?.stat || '10x'}
+                </span>
+                <span className="text-[10px] text-white/60 block leading-tight">
+                  {slide.bentoCards?.[2]?.title || 'Mais Rápido'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between text-[10px] text-white/40 pt-2 border-t border-white/5 font-mono">
+            <span>{brandName}</span>
+            <span>{handle}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Quiz / Enquete Layout */}
+      {isQuiz && (
+        <div 
+          className="relative z-10 flex flex-col w-full h-full justify-between pt-6 pb-4 select-none"
+          style={{ transform: `translate(${slide.textOffsetX || 0}px, ${slide.textOffsetY || 0}px)` }}
+        >
+          <div className="flex items-center justify-between">
+            <span className="bg-amber-400/20 text-amber-300 border border-amber-400/30 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+              <span>❓</span> ENQUETE / QUIZ
+            </span>
+            <span className="text-[10px] text-white/50 font-mono">{brandName}</span>
+          </div>
+
+          <div className="my-auto py-2">
+            <h2 
+              style={{
+                color: textColor,
+                fontSize: (slide.quizQuestion || slide.title || '').length > 50 ? 20 : 24,
+                fontWeight: 800,
+                fontFamily: finalTitleFont,
+                lineHeight: 1.25,
+                textAlign: 'center'
+              }}
+              dangerouslySetInnerHTML={{ __html: slide.quizQuestion || slide.title || 'Qual dessas opções você escolheria?' }}
+            />
+            {slide.content && (
+              <p className="text-center text-xs text-white/70 mt-2" dangerouslySetInnerHTML={{ __html: slide.content }} />
+            )}
+
+            <div className="flex flex-col gap-2.5 mt-4">
+              {(slide.quizOptions || [
+                { label: 'A', text: 'Começar do zero com um método validado', votes: '74%' },
+                { label: 'B', text: 'Tentar aprender sozinho na base do erro', votes: '18%' },
+                { label: 'C', text: 'Esperar mais alguns meses para decidir', votes: '8%' }
+              ]).map((opt, i) => (
+                <div 
+                  key={i}
+                  className="flex items-center justify-between bg-white/[0.05] hover:bg-white/[0.08] border border-white/10 rounded-xl p-3 shadow-md transition-all cursor-pointer relative overflow-hidden"
+                >
+                  <div 
+                    className="absolute left-0 top-0 bottom-0 bg-indigo-500/15 pointer-events-none"
+                    style={{ width: opt.votes || '50%' }}
+                  />
+                  <div className="flex items-center gap-3 relative z-10">
+                    <span className="w-6 h-6 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-xs font-bold text-white shrink-0">
+                      {opt.label || String.fromCharCode(65 + i)}
+                    </span>
+                    <span className="text-xs text-white/90 font-medium text-left">
+                      {opt.text}
+                    </span>
+                  </div>
+                  {opt.votes && (
+                    <span className="text-xs font-bold text-indigo-400 font-mono relative z-10 pl-2">
+                      {opt.votes}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="text-center bg-white/[0.03] border border-white/10 rounded-lg py-2 px-3 text-xs text-white/80">
+            💬 <strong className="text-white">Qual você escolhe?</strong> Comente <span className="text-amber-400 font-bold">A</span>, <span className="text-amber-400 font-bold">B</span> ou <span className="text-amber-400 font-bold">C</span> abaixo!
+          </div>
+        </div>
+      )}
+
       {/* Default Layout */}
       {!isForbes && !isTwitter && !isFrases && !hasCustomLayout && (
         <div 
@@ -1423,6 +1988,19 @@ const Slide = memo(function Slide({ slide, slides = [], index, total, palette, b
                 display: 'inline-block'
               };
               finalTextColor = '#FFFFFF';
+            } else if (slide.titleEffect === 'highlighter') {
+              const highlightColor = slide.titleEffectColors?.[0] || '#FFE600';
+              titleExtraStyles = {
+                background: `linear-gradient(104deg, rgba(255, 230, 0, 0) 0.9%, ${highlightColor} 2.4%, ${highlightColor} 98%, rgba(255, 230, 0, 0) 99.5%)`,
+                color: '#000000',
+                padding: '2px 8px',
+                borderRadius: '4px',
+                boxDecorationBreak: 'clone',
+                WebkitBoxDecorationBreak: 'clone',
+                display: 'inline',
+                fontWeight: '800'
+              };
+              finalTextColor = '#000000';
             }
 
             return (

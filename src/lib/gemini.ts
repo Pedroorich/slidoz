@@ -20,7 +20,7 @@ export interface CustomLayer {
 export interface SlideData {
   id: string;
   type: 'hero' | 'problem' | 'solution' | 'features' | 'details' | 'how-to' | 'cta' | 'quote' | 'testimonial';
-  layoutModel?: 'default' | 'forbes' | 'twitter' | 'frases' | 'ranking' | 'antes_depois' | 'dado_contexto' | 'checklist' | 'depoimento' | 'passo_a_passo' | 'comparativo' | 'citacao_especialista' | 'problema' | 'solucao' | 'timeline';
+  layoutModel?: 'default' | 'forbes' | 'twitter' | 'frases' | 'ranking' | 'antes_depois' | 'dado_contexto' | 'checklist' | 'depoimento' | 'passo_a_passo' | 'comparativo' | 'citacao_especialista' | 'problema' | 'solucao' | 'timeline' | 'noticia' | 'apple_notes' | 'dark_saas' | 'chat' | 'brutalismo' | 'notificacao_push' | 'bento_grid' | 'quiz';
   background: 'light' | 'dark' | 'brand-gradient';
   backgroundImage?: string;
   imageDescription?: string;
@@ -40,7 +40,7 @@ export interface SlideData {
   titleFontSize?: number;
   titleLetterSpacing?: number;
   titleLineHeight?: number;
-  titleEffect?: 'none' | 'text-gradient' | 'bg-solid' | 'bg-gradient';
+  titleEffect?: 'none' | 'text-gradient' | 'bg-solid' | 'bg-gradient' | 'highlighter';
   titleEffectColors?: [string, string];
   bodyFont?: string;
   imageOffsetX?: number;
@@ -83,6 +83,18 @@ export interface SlideData {
   twitterImageBorderRadius?: number;
   twitterImageHeight?: number;
   forbesQuoteColor?: string;
+  newsBadge?: string;
+  newsSource?: string;
+  notesFolder?: string;
+  notesDate?: string;
+  chatMessages?: { sender: 'them' | 'me'; text: string; time?: string; isAudio?: boolean; audioDuration?: string }[];
+  notificationApp?: string;
+  notificationTime?: string;
+  notificationTitle?: string;
+  notificationMessage?: string;
+  quizQuestion?: string;
+  quizOptions?: { label: string; text: string; votes?: string; isCorrect?: boolean }[];
+  bentoCards?: { title: string; subtitle?: string; icon?: string; stat?: string; size?: 'sm' | 'md' | 'lg' }[];
 }
 
 /**
@@ -1151,6 +1163,16 @@ export async function generateCarouselContent(
     prompt += `\nCRÍTICO: Como você escolheu o layout corporativo/editorial, o \`layoutModel\` de todos ou da maioria dos slides deve ser 'forbes'.`;
   } else if (generationLayout === 'twitter') {
     prompt += `\nCRÍTICO: Como você escolheu o layout estilo rede social/tweets, o \`layoutModel\` de todos ou da maioria dos slides deve ser 'twitter'.`;
+  } else if (generationLayout === 'noticia') {
+    prompt += `\nCRÍTICO: O usuário escolheu o layout 'noticia' (Breaking News / Jornalístico). O \`layoutModel\` de todos os slides DEVE ser 'noticia'. O slide 1 deve conter 'newsBadge': 'URGENTE' ou 'NOTÍCIA', título estilo manchete forte e 'newsSource': 'Redação ${brandName} • Há poucos minutos'. Os slides seguintes desenvolvem a notícia com lead objetivo e fatos numerados.`;
+  } else if (generationLayout === 'apple_notes') {
+    prompt += `\nCRÍTICO: O usuário escolheu o layout 'apple_notes' (Bloco de Notas do iPhone). O \`layoutModel\` de todos os slides DEVE ser 'apple_notes'. Cada slide deve simular uma anotação autêntica e de bastidores, com 'notesFolder': 'Notas', título direto com palavras-chave e itens de checklist objetivos.`;
+  } else if (generationLayout === 'dark_saas') {
+    prompt += `\nCRÍTICO: O usuário escolheu o layout 'dark_saas' (Tech Minimal / Linear). O \`layoutModel\` de todos os slides DEVE ser 'dark_saas'. Estilo moderno para tech/startups, com termos precisos, micro-badges e cards em glassmorphism.`;
+  } else if (generationLayout === 'chat') {
+    prompt += `\nCRÍTICO: O usuário escolheu o layout 'chat' (Conversa de WhatsApp / Mensagens). O \`layoutModel\` de todos os slides DEVE ser 'chat'. Cada slide deve simular uma conversa rápida: preencha 'chatMessages' com 2 a 3 mensagens com 'sender': 'them' (dúvida/dor) e 'sender': 'me' (resposta/solução da marca).`;
+  } else if (generationLayout === 'brutalismo') {
+    prompt += `\nCRÍTICO: O usuário escolheu o layout 'brutalismo' (Brutalismo Moderno / Streetwear). O \`layoutModel\` de todos os slides DEVE ser 'brutalismo'. Títulos em CAIXA ALTA (UPPERCASE), fortes, diretos, com alto contraste e impacto visual.`;
   }
 
   try {

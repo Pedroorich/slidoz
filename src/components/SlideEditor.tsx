@@ -352,6 +352,71 @@ export const SlideEditor = memo(function SlideEditor({ slide, prevSlide, onChang
         ];
       }
     }
+    else if (newLayout === 'noticia') {
+      if (!updated.newsBadge) updated.newsBadge = 'URGENTE';
+      if (!updated.newsSource) updated.newsSource = 'Redação • Há 10 min';
+      if (!updated.title) updated.title = 'Grande Novidade Muda o Mercado Esta Semana';
+      if (!updated.content) updated.content = 'Especialistas apontam que a nova atualização traz vantagens decisivas para quem começar cedo.';
+    }
+    else if (newLayout === 'apple_notes') {
+      if (!updated.notesFolder) updated.notesFolder = 'Notas';
+      if (!updated.notesDate) updated.notesDate = 'Hoje, 14:20';
+      if (!updated.title) updated.title = 'Anotação Importante de Bastidores';
+      if (!updated.content) updated.content = 'Isso mudou a forma como eu penso sobre produtividade e resultados nos últimos meses.';
+      if (!updated.items || updated.items.length === 0) {
+        updated.items = [
+          { label: 'Foque no que move o ponteiro', icon: '○' },
+          { label: 'Elimine distrações no primeiro turno', icon: '○' },
+          { label: 'Revise o progresso semanalmente', icon: '○' }
+        ];
+      }
+    }
+    else if (newLayout === 'dark_saas') {
+      if (!updated.tag) updated.tag = 'v2.0 • TECH ARCHITECTURE';
+      if (!updated.title) updated.title = 'Nova Arquitetura de Escala';
+      if (!updated.content) updated.content = 'Construído para máxima velocidade, design limpo e interfaces em glassmorphism de alta densidade.';
+    }
+    else if (newLayout === 'chat') {
+      if (!updated.title) updated.title = 'Conversa de Bastidores';
+      if (!updated.chatMessages || updated.chatMessages.length === 0) {
+        updated.chatMessages = [
+          { sender: 'them', text: 'Como você conseguiu aumentar tanto o alcance?', time: '14:21' },
+          { sender: 'me', text: 'Mudando a estrutura dos carrosséis para formatos de alta retenção!', time: '14:22' }
+        ];
+      }
+    }
+    else if (newLayout === 'brutalismo') {
+      if (!updated.tag) updated.tag = 'DROP #01 • AVISO';
+      if (!updated.title) updated.title = 'PARE DE PERDER TEMPO COM O QUE NÃO CONVERTE';
+      if (!updated.content) updated.content = 'O MÉTODO QUE VOCÊ USA HOJE ESTÁ TE CUSTANDO CARO. VEJA O QUE FAZER AGORA.';
+    }
+    else if (newLayout === 'notificacao_push') {
+      if (!updated.notificationApp) updated.notificationApp = 'Instagram';
+      if (!updated.notificationTime) updated.notificationTime = 'agora';
+      if (!updated.notificationTitle) updated.notificationTitle = 'Notificação Prioritária';
+      if (!updated.notificationMessage) updated.notificationMessage = 'Um novo conteúdo exclusivo acaba de ser liberado.';
+      if (!updated.title) updated.title = 'O que você faria se recebesse essa notificação hoje?';
+    }
+    else if (newLayout === 'bento_grid') {
+      if (!updated.title) updated.title = 'Ecossistema Completo';
+      if (!updated.bentoCards || updated.bentoCards.length === 0) {
+        updated.bentoCards = [
+          { title: 'Alta Retenção', subtitle: 'Audiência assiste e desliza até o final', icon: '🔥', size: 'lg' },
+          { title: 'Alcance', stat: '10x', icon: '🚀', size: 'sm' },
+          { title: 'Praticidade', stat: '100%', icon: '⚡', size: 'sm' }
+        ];
+      }
+    }
+    else if (newLayout === 'quiz') {
+      if (!updated.quizQuestion) updated.quizQuestion = 'Qual dessas opções representa o seu maior objetivo este ano?';
+      if (!updated.quizOptions || updated.quizOptions.length === 0) {
+        updated.quizOptions = [
+          { label: 'A', text: 'Criar carrosséis profissionais 10x mais rápido', votes: '74%' },
+          { label: 'B', text: 'Aumentar engajamento e comentários no feed', votes: '18%' },
+          { label: 'C', text: 'Fechar novos clientes de social media', votes: '8%' }
+        ];
+      }
+    }
 
     onChange(updated);
   };
@@ -412,6 +477,14 @@ export const SlideEditor = memo(function SlideEditor({ slide, prevSlide, onChang
           <option value="forbes">Estilo Forbes (Aspas Elegantes)</option>
           <option value="twitter">Estilo Twitter (Tweet Card)</option>
           <option value="frases">Estilo Frases (Minimalista)</option>
+          <option value="noticia">Estilo Notícia / Breaking News</option>
+          <option value="apple_notes">Estilo Bloco de Notas (Apple Notes)</option>
+          <option value="dark_saas">Estilo Tech Minimal (Dark SaaS / Linear)</option>
+          <option value="chat">Estilo Conversa / Chat (WhatsApp / DM)</option>
+          <option value="brutalismo">Estilo Brutalismo Moderno / Streetwear</option>
+          <option value="notificacao_push">Módulo: Notificação Push (Lock Screen)</option>
+          <option value="bento_grid">Módulo: Bento Grid (3-4 Quadrantes)</option>
+          <option value="quiz">Módulo: Quiz / Enquete Interativa</option>
           <option value="ranking">Módulo 4: Ranking / Top N</option>
           <option value="antes_depois">Módulo 5: Antes vs Depois</option>
           <option value="dado_contexto">Módulo 6: Dado + Contexto</option>
@@ -1056,8 +1129,9 @@ export const SlideEditor = memo(function SlideEditor({ slide, prevSlide, onChang
                         <label className="text-[10px] text-[rgba(240,240,240,0.6)]">Efeito Visual</label>
                         <select value={slide.titleEffect || 'none'} onChange={(e) => handleChange('titleEffect', e.target.value)} className="p-1 border border-[rgba(255,255,255,0.1)] rounded text-xs bg-[#0A0A0A] text-white">
                           <option value="none">Nenhum</option>
+                          <option value="highlighter">Marca-Texto Fluorescente (Highlighter)</option>
                           <option value="text-gradient">Texto em Degradê</option>
-                          <option value="bg-solid">Fundo Sólido (Marca texto)</option>
+                          <option value="bg-solid">Fundo Sólido</option>
                           <option value="bg-gradient">Fundo Degradê</option>
                         </select>
                       </div>

@@ -191,7 +191,7 @@ export default function GeneratorPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   
   const [format, setFormat] = useState<'portrait' | 'square' | 'stories'>('portrait');
-  const [generationLayout, setGenerationLayout] = useState<'default' | 'forbes' | 'twitter' | 'frases'>('default');
+  const [generationLayout, setGenerationLayout] = useState<'default' | 'forbes' | 'twitter' | 'frases' | 'noticia' | 'apple_notes' | 'dark_saas' | 'chat' | 'brutalismo'>('default');
   const [phraseCategory, setPhraseCategory] = useState('Motivação');
   const [customPhrases, setCustomPhrases] = useState('');
 
@@ -1989,6 +1989,78 @@ export default function GeneratorPage() {
                       <span className="text-[4px] text-white/40 font-bold uppercase tracking-wider leading-none block">@marca</span>
                     </div>
                     <span className="text-[11px] font-semibold text-center block">Frases</span>
+                  </div>
+
+                  {/* Card Notícia / Breaking News */}
+                  <div 
+                    onClick={() => setGenerationLayout('noticia')}
+                    className={`cursor-pointer border rounded-xl p-2.5 flex flex-col gap-2 transition-all ${generationLayout === 'noticia' ? 'border-[#6C63FF] bg-[rgba(108,99,255,0.08)] shadow-[0_0_12px_rgba(108,99,255,0.1)]' : 'border-[rgba(255,255,255,0.06)] bg-[#0A0A0A] hover:border-[rgba(255,255,255,0.15)]'}`}
+                  >
+                    <div className="h-16 w-full rounded bg-[#0D0D0D] border border-white/5 flex flex-col p-1.5 justify-start gap-1 relative overflow-hidden text-left">
+                      <span className="text-[5px] bg-red-600 text-white font-extrabold px-1 rounded-sm w-fit uppercase tracking-wider">URGENTE</span>
+                      <span className="text-[6.5px] text-white font-bold leading-tight block">Manchete Noticiosa</span>
+                      <span className="text-[4.5px] text-white/50 leading-none block">Fonte oficial • há 10m</span>
+                    </div>
+                    <span className="text-[11px] font-semibold text-center block">Notícia</span>
+                  </div>
+
+                  {/* Card Apple Notes */}
+                  <div 
+                    onClick={() => setGenerationLayout('apple_notes')}
+                    className={`cursor-pointer border rounded-xl p-2.5 flex flex-col gap-2 transition-all ${generationLayout === 'apple_notes' ? 'border-[#6C63FF] bg-[rgba(108,99,255,0.08)] shadow-[0_0_12px_rgba(108,99,255,0.1)]' : 'border-[rgba(255,255,255,0.06)] bg-[#0A0A0A] hover:border-[rgba(255,255,255,0.15)]'}`}
+                  >
+                    <div className="h-16 w-full rounded bg-[#F8F6F0] border border-amber-900/10 flex flex-col p-1.5 justify-start gap-1 relative overflow-hidden text-left">
+                      <div className="flex items-center justify-between text-[#D4A017] text-[5px] font-medium">
+                        <span>&lt; Notas</span>
+                        <span className="text-[4.5px] text-neutral-400">Hoje, 14:20</span>
+                      </div>
+                      <span className="text-[6.5px] text-black font-semibold leading-tight block bg-[#FFE600]/80 px-0.5 rounded-sm w-fit">Anotação Real</span>
+                      <span className="text-[4.5px] text-neutral-600 leading-none block">○ Insight de bastidor sem filtro</span>
+                    </div>
+                    <span className="text-[11px] font-semibold text-center block">Apple Notes</span>
+                  </div>
+
+                  {/* Card Dark SaaS */}
+                  <div 
+                    onClick={() => setGenerationLayout('dark_saas')}
+                    className={`cursor-pointer border rounded-xl p-2.5 flex flex-col gap-2 transition-all ${generationLayout === 'dark_saas' ? 'border-[#6C63FF] bg-[rgba(108,99,255,0.08)] shadow-[0_0_12px_rgba(108,99,255,0.1)]' : 'border-[rgba(255,255,255,0.06)] bg-[#0A0A0A] hover:border-[rgba(255,255,255,0.15)]'}`}
+                  >
+                    <div className="h-16 w-full rounded bg-[#090A10] border border-indigo-500/20 flex flex-col p-1.5 justify-center gap-1 relative overflow-hidden text-left shadow-[inset_0_0_10px_rgba(99,102,241,0.1)]">
+                      <span className="text-[5px] text-indigo-400 font-mono border border-indigo-500/30 bg-indigo-500/10 px-1 rounded-full w-fit">v2.0 • TECH</span>
+                      <span className="text-[6.5px] text-white font-semibold leading-tight block">Design System Pro</span>
+                      <span className="text-[4.5px] text-white/50 leading-none block">Glassmorphism & Glow</span>
+                    </div>
+                    <span className="text-[11px] font-semibold text-center block">Dark SaaS</span>
+                  </div>
+
+                  {/* Card Chat WhatsApp */}
+                  <div 
+                    onClick={() => setGenerationLayout('chat')}
+                    className={`cursor-pointer border rounded-xl p-2.5 flex flex-col gap-2 transition-all ${generationLayout === 'chat' ? 'border-[#6C63FF] bg-[rgba(108,99,255,0.08)] shadow-[0_0_12px_rgba(108,99,255,0.1)]' : 'border-[rgba(255,255,255,0.06)] bg-[#0A0A0A] hover:border-[rgba(255,255,255,0.15)]'}`}
+                  >
+                    <div className="h-16 w-full rounded bg-[#0B141A] border border-white/5 flex flex-col p-1.5 justify-center gap-1 relative overflow-hidden text-left">
+                      <div className="bg-[#202C33] rounded-md rounded-tl-none p-1 text-[5px] text-white/90 w-fit max-w-[80%] leading-tight">
+                        Como funciona?
+                      </div>
+                      <div className="bg-[#005C4B] rounded-md rounded-tr-none p-1 text-[5px] text-white/90 w-fit max-w-[80%] ml-auto leading-tight flex items-center gap-0.5">
+                        <span>É simples e direto!</span>
+                        <span className="text-[#53BDEB] text-[4px]">✓✓</span>
+                      </div>
+                    </div>
+                    <span className="text-[11px] font-semibold text-center block">Chat / DM</span>
+                  </div>
+
+                  {/* Card Brutalismo */}
+                  <div 
+                    onClick={() => setGenerationLayout('brutalismo')}
+                    className={`cursor-pointer border rounded-xl p-2.5 flex flex-col gap-2 transition-all ${generationLayout === 'brutalismo' ? 'border-[#6C63FF] bg-[rgba(108,99,255,0.08)] shadow-[0_0_12px_rgba(108,99,255,0.1)]' : 'border-[rgba(255,255,255,0.06)] bg-[#0A0A0A] hover:border-[rgba(255,255,255,0.15)]'}`}
+                  >
+                    <div className="h-16 w-full rounded bg-black border border-white/40 flex flex-col p-1.5 justify-center gap-1 relative overflow-hidden text-left">
+                      <span className="text-[5px] bg-[#CCFF00] text-black font-black px-1 rounded-none w-fit uppercase tracking-tighter">DROP #01</span>
+                      <span className="text-[7.5px] text-white font-black uppercase tracking-tighter leading-none block">IMPACTO TOTAL</span>
+                      <span className="text-[4.5px] text-white/70 uppercase leading-none block font-mono">03 DICAS SEM FILTRO</span>
+                    </div>
+                    <span className="text-[11px] font-semibold text-center block">Brutalismo</span>
                   </div>
                 </div>
               </div>
